@@ -8,14 +8,37 @@ from bot import bot, prefixes, bot_photo, Now, LOGGER, config, save_config, _ope
 from pyrogram import filters
 
 from bot.func_helper.filters import admins_on_filter
-from bot.func_helper.fix_bottons import config_preparation, close_it_ikb, back_config_p_ikb, back_set_ikb, mp_config_ikb
+from bot.func_helper.fix_bottons import config_preparation, close_it_ikb, back_config_p_ikb, back_set_ikb, mp_config_ikb, perm_panel_ikb
 from bot.func_helper.msg_utils import deleteMessage, editMessage, callAnswer, callListen, sendPhoto, sendFile
 from bot.func_helper.scheduler import scheduler
 from bot.scheduler.sync_mp_download import sync_download_tasks
+from bot.func_helper.permissions import has_permission, get_user_role
+import json
+
+
+def _permission_text() -> str:
+    lines = ["**🔐 当前权限配置**\n"]
+    for perm, roles in (config.permissions or {}).items():
+        roles_text = ", ".join(roles) if roles else "无"
+        lines.append(f"- `{perm}`: {roles_text}")
+    return "\n".join(lines)
+
+
+def _format_roles() -> str:
+    return "角色：`owner` / `admin` / `operator`"
+
+
+async def _ensure_perm(call, perm: str):
+    if not has_permission(call.from_user.id, perm):
+        await callAnswer(call, "❌ 权限不足", True)
+        return False
+    return True
 
 
 @bot.on_message(filters.command('config', prefixes=prefixes) & admins_on_filter)
 async def config_p_set(_, msg):
+    if not has_permission(msg.from_user.id, "config_basic"):
+        return await sendPhoto(msg, photo=bot_photo, caption="❌ 权限不足，无法进入配置面板。")
     await deleteMessage(msg)
     await sendPhoto(msg, photo=bot_photo, caption="🌸 欢迎回来！\n\n👇点击你要修改的内容。",
                     buttons=config_preparation())
@@ -23,12 +46,16 @@ async def config_p_set(_, msg):
 
 @bot.on_callback_query(filters.regex('back_config') & admins_on_filter)
 async def config_p_re(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, "✅ config")
     await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容。", buttons=config_preparation())
 
 
 @bot.on_callback_query(filters.regex("log_out") & admins_on_filter)
 async def log_out(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, '🌐查询中...')
     # file位置以main.py为准
     send = await sendFile(call, file=f"log/log_{Now:%Y%m%d}.txt", file_name=f'log_{Now:%Y-%m-%d}.txt',
@@ -41,6 +68,8 @@ async def log_out(_, call):
 
 @bot.on_callback_query(filters.regex("set_tz") & admins_on_filter)
 async def set_tz(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     await callAnswer(call, '📌 设置探针')
     send = await editMessage(call,
                              "【设置探针】\n\n请依次输入探针地址，api_token，设置的检测多个id 如：\n**【地址】https://tz.susuyyds.xyz\n【api_token】xxxxxx\n【数字】1 2 3**\n取消点击 /cancel")
@@ -77,6 +106,8 @@ async def set_tz(_, call):
 # 设置 emby 线路
 @bot.on_callback_query(filters.regex('set_line') & admins_on_filter)
 async def set_emby_line(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     await callAnswer(call, '📌 设置emby线路')
     send = await editMessage(call,
                              "💘【设置线路】\n\n对我发送向emby用户展示的emby地址吧\n取消点击 /cancel")
@@ -100,6 +131,8 @@ async def set_emby_line(_, call):
 
 @bot.on_callback_query(filters.regex('set_whitelist_line') & admins_on_filter)
 async def set_whitelist_emby_line(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     await callAnswer(call, '🌟 设置白名单线路')
     send = await editMessage(call,
                              "🌟【设置白名单线路】\n\n对我发送白名单用户专属的emby地址\n取消点击 /cancel")
@@ -124,6 +157,8 @@ async def set_whitelist_emby_line(_, call):
 # 设置需要显示/隐藏的库
 @bot.on_callback_query(filters.regex('set_block') & admins_on_filter)
 async def set_block(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     await callAnswer(call, '📺 设置显隐媒体库')
     send = await editMessage(call,
                              "🎬**【设置需要显示/隐藏的库】**\n\n对我发送库的名字，多个**中文逗号**隔开\n例: `SGNB 特效电影，纪录片`\n超时自动退出 or 点 /cancel 退出")
@@ -196,6 +231,8 @@ async def set_block(_, call):
 
 @bot.on_callback_query(filters.regex('set_update') & admins_on_filter)
 async def set_auto_update(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     try:
         # 简化逻辑，只设置一次
         auto_update.status = not auto_update.status
@@ -217,6 +254,8 @@ async def set_auto_update(_, call):
 @bot.on_callback_query(filters.regex('^set_mp$') & admins_on_filter)
 async def mp_config_panel(_, call):
     """MoviePilot 设置面板"""
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, '⚙️ MoviePilot 设置')
     lv_text = '无'
     if moviepilot.lv == 'a':
@@ -234,6 +273,8 @@ async def mp_config_panel(_, call):
 @bot.on_callback_query(filters.regex('^set_mp_status$') & admins_on_filter)
 async def set_mp_status(_, call):
     """设置点播功能开关"""
+    if not await _ensure_perm(call, "config_basic"):
+        return
     try:
         moviepilot.status = not moviepilot.status
         if moviepilot.status:
@@ -252,6 +293,8 @@ async def set_mp_status(_, call):
 @bot.on_callback_query(filters.regex('^set_mp_price$') & admins_on_filter)
 async def set_mp_price(_, call):
     """设置点播价格"""
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, '💰 设置点播价格')
     await editMessage(call,
                      f"💰 设置点播价格\n\n"
@@ -278,6 +321,8 @@ async def set_mp_price(_, call):
 @bot.on_callback_query(filters.regex('set_mp_lv') & admins_on_filter)
 async def set_mp_lv(_, call):
     """设置用户权限"""
+    if not await _ensure_perm(call, "config_basic"):
+        return
     moviepilot.lv = 'a' if moviepilot.lv == 'b' else 'b'
     message = '✅ 已设置为仅白名单用户可用' if moviepilot.lv == 'a' else '✅ 已设置为普通用户可用'
     await callAnswer(call, message, True)
@@ -287,6 +332,8 @@ async def set_mp_lv(_, call):
 @bot.on_callback_query(filters.regex('set_mp_log_channel') & admins_on_filter)
 async def set_mp_log_channel(_, call):
     """设置日志频道"""
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     await callAnswer(call, '📝 设置日志频道')
     await editMessage(call,
                      f"📝 设置日志频道\n\n"
@@ -311,6 +358,8 @@ async def set_mp_log_channel(_, call):
 
 @bot.on_callback_query(filters.regex('leave_ban') & admins_on_filter)
 async def open_leave_ban(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     # 切换状态
     _open.leave_ban = not _open.leave_ban
     # 根据当前状态发送消息
@@ -329,6 +378,8 @@ async def open_leave_ban(_, call):
 
 @bot.on_callback_query(filters.regex('set_uplays') & admins_on_filter)
 async def set_user_playrank(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     _open.uplays = not _open.uplays
     if not _open.uplays:
         message = '👮🏻‍♂️ 您已关闭 观影榜结算，自动召唤观影榜将不被计算积分'
@@ -345,6 +396,8 @@ async def set_user_playrank(_, call):
 
 @bot.on_callback_query(filters.regex('set_kk_gift_days') & admins_on_filter)
 async def set_kk_gift_days(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, '📌 设置赠送资格天数')
     send = await editMessage(call,
                              f"🤝【设置kk赠送资格】\n\n请输入一个数字\n取消点击 /cancel\n\n当前赠送资格天数: {config.kk_gift_days}")
@@ -375,6 +428,8 @@ async def set_kk_gift_days(_, call):
 
 @bot.on_callback_query(filters.regex('set_fuxx_pitao') & admins_on_filter)
 async def set_fuxx_pitao(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     config.fuxx_pitao = not config.fuxx_pitao
     if not config.fuxx_pitao:
         message = '👮🏻‍♂️ 您已关闭 皮套过滤功能，现在皮套人的消息不会被处理'
@@ -389,6 +444,8 @@ async def set_fuxx_pitao(_, call):
     LOGGER.info(log_message)
 @bot.on_callback_query(filters.regex('set_red_envelope_status') & admins_on_filter)
 async def set_red_envelope_status(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     config.red_envelope.status = not config.red_envelope.status
     if config.red_envelope.status:
         message = '👮🏻‍♂️ 您已开启 红包功能，现在用户可以发送红包了'
@@ -403,6 +460,8 @@ async def set_red_envelope_status(_, call):
 
 @bot.on_callback_query(filters.regex('set_red_envelope_allow_private') & admins_on_filter)
 async def set_red_envelope_allow_private(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     config.red_envelope.allow_private = not config.red_envelope.allow_private
     if config.red_envelope.allow_private:
         message = '👮🏻‍♂️ 您已开启 专属红包，现在用户可以发送专属红包了'
@@ -417,6 +476,8 @@ async def set_red_envelope_allow_private(_, call):
 
 @bot.on_callback_query(filters.regex('set_activity_check_days') & admins_on_filter)
 async def set_activity_check_days(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, '📌 设置活跃检测天数')
     send = await editMessage(call,
                              f"🕰️【设置活跃检测天数】\n\n请输入一个数字（天数）\n取消点击 /cancel\n\n当前活跃检测天数: {config.activity_check_days}")
@@ -445,3 +506,121 @@ async def set_activity_check_days(_, call):
                               f"🕰️ 【活跃检测天数】\n\n{days}天 **Done!**",
                               buttons=back_config_p_ikb)
             LOGGER.info(f"【admin】：{call.from_user.id} - 更新活跃检测天数为{days}天完成")
+
+
+@bot.on_callback_query(filters.regex("perm_panel") & admins_on_filter)
+async def perm_panel(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    role = get_user_role(call.from_user.id)
+    text = f"**🧭 权限管理**\n\n- 当前角色：`{role}`\n- 次级管理员列表：{', '.join(map(str, config.operators)) or '无'}\n\n"
+    text += _permission_text() + f"\n\n{_format_roles()}"
+    await editMessage(call, text, buttons=perm_panel_ikb())
+
+
+@bot.on_callback_query(filters.regex("set_operators") & admins_on_filter)
+async def set_operators(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    await callAnswer(call, "🔧 设置次级管理员")
+    send = await editMessage(call, "请输入次级管理员 TGID，空格分隔。清空请输入 `none`，取消 /cancel")
+    if send is False:
+        return
+    txt = await callListen(call, 120, buttons=back_set_ikb("set_operators"))
+    if txt is False:
+        return
+    if txt.text == "/cancel":
+        await txt.delete()
+        return await editMessage(call, "已取消。", buttons=back_config_p_ikb)
+    content = txt.text.strip()
+    await txt.delete()
+    if content.lower() == "none":
+        config.operators = []
+    else:
+        ids = [int(x) for x in content.split()]
+        config.operators = ids
+    save_config()
+    await editMessage(call, f"✅ 已更新次级管理员：{', '.join(map(str, config.operators)) or '无'}", buttons=back_config_p_ikb)
+
+
+@bot.on_callback_query(filters.regex("set_permissions") & admins_on_filter)
+async def set_permissions(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    await callAnswer(call, "🔧 设置权限")
+    available_perms = ", ".join((config.permissions or {}).keys())
+    help_text = (
+        "请按行输入权限配置，格式：`权限名=角色1,角色2`\n"
+        "例如：`manage_codes=owner,admin,operator`\n"
+        "支持权限：`{}`\n"
+        "{}"
+    ).format(available_perms, _format_roles())
+    send = await editMessage(call, help_text)
+    if send is False:
+        return
+    txt = await callListen(call, 180, buttons=back_set_ikb("set_permissions"))
+    if txt is False:
+        return
+    if txt.text == "/cancel":
+        await txt.delete()
+        return await editMessage(call, "已取消。", buttons=back_config_p_ikb)
+    await txt.delete()
+    new_permissions = {}
+    for line in txt.text.splitlines():
+        if not line.strip():
+            continue
+        if "=" not in line:
+            return await editMessage(call, f"格式错误：`{line}`", buttons=back_set_ikb("set_permissions"))
+        key, roles = line.split("=", 1)
+        new_permissions[key.strip()] = [r.strip() for r in roles.split(",") if r.strip()]
+    config.permissions = new_permissions
+    save_config()
+    await editMessage(call, "✅ 权限已更新。", buttons=back_config_p_ikb)
+
+
+@bot.on_callback_query(filters.regex("set_config_any") & admins_on_filter)
+async def set_config_any(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    await callAnswer(call, "🧩 配置编辑器")
+    help_text = (
+        "请输入：`路径=值`，支持 JSON 值。\n"
+        "示例：`open.all_user=500`\n"
+        "示例：`emby_block=[\"A\",\"B\"]`\n"
+        "取消 /cancel"
+    )
+    send = await editMessage(call, help_text)
+    if send is False:
+        return
+    txt = await callListen(call, 180, buttons=back_set_ikb("set_config_any"))
+    if txt is False:
+        return
+    if txt.text == "/cancel":
+        await txt.delete()
+        return await editMessage(call, "已取消。", buttons=back_config_p_ikb)
+    await txt.delete()
+    if "=" not in txt.text:
+        return await editMessage(call, "格式错误，请使用 `路径=值`。", buttons=back_set_ikb("set_config_any"))
+    path, raw_value = txt.text.split("=", 1)
+    path = path.strip()
+    raw_value = raw_value.strip()
+    try:
+        value = json.loads(raw_value)
+    except json.JSONDecodeError:
+        value = raw_value
+    try:
+        target = config
+        parts = path.split(".")
+        for part in parts[:-1]:
+            if isinstance(target, dict):
+                target = target.setdefault(part, {})
+            else:
+                target = getattr(target, part)
+        if isinstance(target, dict):
+            target[parts[-1]] = value
+        else:
+            setattr(target, parts[-1], value)
+        save_config()
+    except Exception as exc:
+        return await editMessage(call, f"❌ 更新失败：{exc}", buttons=back_set_ikb("set_config_any"))
+    await editMessage(call, f"✅ 已更新 `{path}`。", buttons=back_config_p_ikb)

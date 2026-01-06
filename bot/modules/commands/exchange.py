@@ -8,6 +8,7 @@ from bot.func_helper.emby import emby
 from bot.func_helper.fix_bottons import register_code_ikb
 from bot.func_helper.msg_utils import sendMessage, sendPhoto
 from bot.sql_helper.sql_code import Code
+from bot.func_helper.package_utils import db_package_context, get_package_key_for_user_record
 from bot.sql_helper.sql_emby import sql_get_emby, Emby
 from bot.sql_helper import Session
 
@@ -27,11 +28,12 @@ async def rgs_code(_, msg, register_code):
     embyid = data.embyid
     ex = data.ex
     lv = data.lv
+    package_key = get_package_key_for_user_record(data)
     if embyid:
         if not is_renew_code(register_code): return await sendMessage(msg,
                                                                       "🔔 很遗憾，您使用的是注册码，无法启用续期功能，请悉知",
                                                                       timer=60)
-        with Session() as session:
+        with db_package_context(package_key), Session() as session:
             # with_for_update 是一个排他锁，其实就不需要悲观锁或者是乐观锁，先锁定先到的数据使其他session无法读取，修改(单独似乎不起作用，也许是不能完全防止并发冲突，于是加入原子操作)
             r = session.query(Code).filter(Code.code == register_code).with_for_update().first()
             if not r: return await sendMessage(msg, "⛔ **你输入了一个错误de续期码，请确认好重试。**", timer=60)
@@ -50,7 +52,7 @@ async def rgs_code(_, msg, register_code):
             ex_new = datetime.now()
             if ex_new > ex:
                 ex_new = ex_new + timedelta(days=us1)
-                await emby.emby_change_policy(emby_id=embyid, disable=False)
+                await emby.emby_change_policy(emby_id=embyid, disable=False, package_key=package_key)
                 if lv == 'c':
                     session.query(Emby).filter(Emby.tg == msg.from_user.id).update({Emby.ex: ex_new, Emby.lv: 'b'})
                 else:
@@ -74,7 +76,7 @@ async def rgs_code(_, msg, register_code):
                                                                   "🔔 很遗憾，您使用的是续期码，无法启用注册功能，请悉知",
                                                                   timer=60)
         if data.us > 0: return await sendMessage(msg, "已有注册资格，请先使用【创建账户】注册，勿重复使用其他注册码。")
-        with Session() as session:
+        with db_package_context(package_key), Session() as session:
             # 我勒个豆，终于用 原子操作 + 排他锁 成功防止了并发更新
             # 在 UPDATE 语句中添加一个条件，只有当注册码未被使用时，才更新数据。这样，如果有两个用户同时尝试使用同一条注册码，只有一个用户的 UPDATE 语句会成功，因为另一个用户的 UPDATE 语句会发现注册码已经被使用。
             r = session.query(Code).filter(Code.code == register_code).with_for_update().first()

@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, UniqueConstraint
-from bot.sql_helper import Base, engine, Session
+from bot.sql_helper import Base, Session, get_engine, package_keys
 from bot import LOGGER
 
 class EmbyFavorites(Base):
@@ -19,9 +19,17 @@ class EmbyFavorites(Base):
         UniqueConstraint('embyid', 'item_id', name='uix_emby_item'),
     ) 
 
-EmbyFavorites.__table__.create(bind=engine, checkfirst=True)
+for _package_key in package_keys():
+    EmbyFavorites.__table__.create(bind=get_engine(_package_key), checkfirst=True)
 
-def sql_add_favorites(embyid: str, embyname: str, item_id: str, item_name: str, is_favorite: bool = True) -> bool:
+def sql_add_favorites(
+    embyid: str,
+    embyname: str,
+    item_id: str,
+    item_name: str,
+    is_favorite: bool = True,
+    package_key: str = None,
+) -> bool:
     """
     添加或删除收藏记录
     以 emby_name 为主要判断依据，因为 emby_id 可能会变化
@@ -34,7 +42,7 @@ def sql_add_favorites(embyid: str, embyname: str, item_id: str, item_name: str, 
         is_favorite: True为收藏，False为取消收藏
     """
     try:
-        with Session() as session:
+        with Session(package_key) as session:
             if is_favorite:
                 # 收藏操作：以 embyname 为主要标识符（embyname 是唯一且不变的）
                 
