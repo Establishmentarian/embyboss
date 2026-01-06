@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, DateTime, BigInteger, Text, Float
 import datetime
-from bot.sql_helper import Base, Session, engine
+from bot.sql_helper import Base, Session, get_engine, package_keys
 from cacheout import Cache
 
 cache = Cache()
@@ -22,7 +22,8 @@ class RequestRecord(Base):
                       onupdate=datetime.datetime.utcnow)
 
 
-RequestRecord.__table__.create(bind=engine, checkfirst=True)
+for _package_key in package_keys():
+    RequestRecord.__table__.create(bind=get_engine(_package_key), checkfirst=True)
 
 
 def sql_add_request_record(tg: int, download_id: str, request_name: str, detail: str, cost: str):

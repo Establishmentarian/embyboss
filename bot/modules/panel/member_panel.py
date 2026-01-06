@@ -11,10 +11,11 @@ import math
 import random
 from datetime import timedelta, datetime
 from bot.schemas import ExDate, Yulv
-from bot import bot, LOGGER, _open, emby_line, sakura_b, ranks, group, extra_emby_libs, config, bot_name, schedall
+from bot import bot, LOGGER, _open, sakura_b, ranks, group, extra_emby_libs, config, bot_name, schedall
 from pyrogram import filters
 from bot.func_helper.emby import emby
 from bot.func_helper.filters import user_in_group_on_filter
+from bot.func_helper.package_utils import get_line_for_level, get_line_for_user, get_package_key_by_level
 from bot.func_helper.utils import members_info, tem_adduser, cr_link_one, judge_admins, tem_deluser, pwd_create
 from bot.func_helper.fix_bottons import members_ikb, back_members_ikb, re_create_ikb, del_me_ikb, re_delme_ikb, \
     re_reset_ikb, re_changetg_ikb, emby_block_ikb, user_emby_block_ikb, user_emby_unblock_ikb, re_exchange_b_ikb, \
@@ -56,7 +57,8 @@ async def create_user(_, call, us, stats):
                 f'🆗 会话结束，收到设置\n\n用户名：**{emby_name}**  安全码：**{emby_pwd2}** \n\n__正在为您初始化账户，更新用户策略__......')
             
             # emby api操作
-            data = await emby.emby_create(name=emby_name, days=us)
+            package_key = get_package_key_by_level("b")
+            data = await emby.emby_create(name=emby_name, days=us, package_key=package_key)
             if not data:
                 await editMessage(send,
                                   '**- ❎ 已有此账户名，请重新输入注册\n- ❎ 或检查有无特殊字符\n- ❎ 或emby服务器连接不通，会话已结束！**',
@@ -92,7 +94,7 @@ async def create_user(_, call, us, stats):
                                   f'· 安全密码 | `{emby_pwd2}`（仅发送一次）\n'
                                   f'· 到期时间 | `{ex}`\n'
                                   f'· 当前线路：\n'
-                                  f'{emby_line}\n\n'
+                                  f'{get_line_for_level("b")}\n\n'
                                   f'**·【服务器】 - 查看线路和密码**')
                 
                 LOGGER.info(f"【创建账户】[开注状态]：{call.from_user.id} - 建立了 {emby_name} ") if stats else LOGGER.info(
@@ -191,7 +193,7 @@ async def change_tg(_, call):
                    f'· 用户密码 | `{e.pwd}`\n' \
                    f'· 安全密码 | `{e.pwd2}`（仅发送一次）\n' \
                    f'· 到期时间 | `{e.ex}`\n\n' \
-                   f'· 当前线路：\n{emby_line}\n\n' \
+                   f'· 当前线路：\n{get_line_for_user(e)}\n\n' \
                    f'**·在【服务器】按钮 - 查看线路和密码**'
             await bot.send_message(current_id, text)
             LOGGER.info(
@@ -242,7 +244,13 @@ async def change_tg(_, call):
                 return await editMessage(call, f'❓ 未查询到bot数据中名为 {emby_name} 的账户，请使用 **绑定TG** 功能。',
                                          buttons=re_bindtg_ikb)
             if emby_pwd != e2.pwd2:
-                success, embyid = await emby.authority_account(tg_id=call.from_user.id, username=emby_name, password=emby_pwd)
+                package_key = get_package_key_by_level(e2.lv)
+                success, embyid = await emby.authority_account(
+                    tg_id=call.from_user.id,
+                    username=emby_name,
+                    password=emby_pwd,
+                    package_key=package_key,
+                )
                 if not success:
                     return await editMessage(call,
                                              f'💢 安全码or密码验证错误，请检查输入\n{emby_name} {emby_pwd} 是否正确。',
@@ -255,7 +263,7 @@ async def change_tg(_, call):
                        f'· 用户密码 | `{pwd[0]}`\n' \
                        f'· 安全密码 | `{e2.pwd2}`（仅发送一次）\n' \
                        f'· 到期时间 | `{e2.ex}`\n\n' \
-                       f'· 当前线路：\n{emby_line}\n\n' \
+                       f'· 当前线路：\n{get_line_for_user(e2)}\n\n' \
                        f'**·在【服务器】按钮 - 查看线路和密码**'
                 await sendMessage(call,
                                   f'⭕#TG改绑 原emby账户 #{emby_name}\n\n'
@@ -270,7 +278,7 @@ async def change_tg(_, call):
                        f'· 用户密码 | `{e2.pwd}`\n' \
                        f'· 安全密码 | `{pwd[1]}`（仅发送一次）\n' \
                        f'· 到期时间 | `{e2.ex}`\n\n' \
-                       f'· 当前线路：\n{emby_line}\n\n' \
+                       f'· 当前线路：\n{get_line_for_user(e2)}\n\n' \
                        f'**·在【服务器】按钮 - 查看线路和密码**'
                 sql_update_emby(Emby.tg == call.from_user.id, embyid=e2.embyid, name=e2.name, pwd=e2.pwd,
                                 pwd2=emby_pwd, lv=e2.lv, cr=e2.cr, ex=e2.ex)
@@ -285,7 +293,13 @@ async def change_tg(_, call):
         else:
             if call.from_user.id == e.tg: return await editMessage(call, '⚠️ 您已经拥有账户。')
             if emby_pwd != e.pwd2:
-                success, embyid = await emby.authority_account(tg_id=call.from_user.id, username=emby_name, password=emby_pwd)
+                package_key = get_package_key_by_level(e.lv)
+                success, embyid = await emby.authority_account(
+                    tg_id=call.from_user.id,
+                    username=emby_name,
+                    password=emby_pwd,
+                    package_key=package_key,
+                )
                 if not success:
                     return await editMessage(call,
                                              f'💢 安全码or密码验证错误，请检查输入\n{emby_name} {emby_pwd} 是否正确。',
@@ -339,7 +353,13 @@ async def bind_tg(_, call):
         if e is None:
             e2 = sql_get_emby2(name=emby_name)
             if e2 is None:
-                success, embyid = await emby.authority_account(tg_id=call.from_user.id, username=emby_name, password=emby_pwd)
+                package_key = get_package_key_by_level("b")
+                success, embyid = await emby.authority_account(
+                    tg_id=call.from_user.id,
+                    username=emby_name,
+                    password=emby_pwd,
+                    package_key=package_key,
+                )
                 if not success:
                     return await editMessage(call,
                                              f'🍥 很遗憾绑定失败，您输入的账户密码不符（{emby_name} - {emby_pwd}），请仔细确认后再次尝试',
@@ -353,7 +373,7 @@ async def bind_tg(_, call):
                            f'· 用户密码 | `{pwd[0]}`\n' \
                            f'· 安全密码 | `{pwd[1]}`（仅发送一次）\n' \
                            f'· 到期时间 | `{ex}`\n\n' \
-                           f'· 当前线路：\n{emby_line}\n\n' \
+                           f'· 当前线路：\n{get_line_for_level("b")}\n\n' \
                            f'· **在【服务器】按钮 - 查看线路和密码**'
                     sql_update_emby(Emby.tg == call.from_user.id, embyid=embyid, name=emby_name, pwd=pwd[0],
                                     pwd2=pwd[1], lv='b', cr=datetime.now(), ex=ex)

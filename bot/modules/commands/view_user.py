@@ -1,15 +1,18 @@
 from bot.func_helper.emby import emby
 from pyrogram import filters
 from bot import bot, bot_name
-from bot.func_helper.filters import admins_on_filter
+from bot.func_helper.filters import staff_on_filter
+from bot.func_helper.permissions import has_permission
 from bot.func_helper.msg_utils import editMessage
 from bot.func_helper.fix_bottons import whitelist_page_ikb, normaluser_page_ikb,devices_page_ikb 
 from bot.sql_helper.sql_emby import get_all_emby, Emby
 from bot.func_helper.msg_utils import callAnswer
 import math
 
-@bot.on_callback_query(filters.regex('^whitelist$') & admins_on_filter)
+@bot.on_callback_query(filters.regex('^whitelist$') & staff_on_filter)
 async def list_whitelist(_, call):
+    if not has_permission(call.from_user.id, "view_users"):
+        return await callAnswer(call, "❌ 权限不足", True)
     await callAnswer(call, '🔍 白名单用户列表')
     page = 1
     whitelist_users = get_all_emby(Emby.lv == 'a')
@@ -20,8 +23,10 @@ async def list_whitelist(_, call):
     keyboard = await whitelist_page_ikb(total_pages, page)
 
     await editMessage(call, text, buttons=keyboard)
-@bot.on_callback_query(filters.regex('^normaluser$') & admins_on_filter)
+@bot.on_callback_query(filters.regex('^normaluser$') & staff_on_filter)
 async def list_normaluser(_, call):
+    if not has_permission(call.from_user.id, "view_users"):
+        return await callAnswer(call, "❌ 权限不足", True)
     await callAnswer(call, '🔍 普通用户列表')
     page = 1
     normal_users = get_all_emby(Emby.lv == 'b')
@@ -33,8 +38,10 @@ async def list_normaluser(_, call):
     await editMessage(call, text, buttons=keyboard)
 
 
-@bot.on_callback_query(filters.regex('^whitelist:') & admins_on_filter)
+@bot.on_callback_query(filters.regex('^whitelist:') & staff_on_filter)
 async def whitelist_page(_, call):
+    if not has_permission(call.from_user.id, "view_users"):
+        return await callAnswer(call, "❌ 权限不足", True)
     page = int(call.data.split(':')[1])
     await callAnswer(call, f'🔍 打开第{page}页')
     whitelist_users = get_all_emby(Emby.lv == 'a')
@@ -46,8 +53,10 @@ async def whitelist_page(_, call):
 
     await editMessage(call, text, buttons=keyboard)
 
-@bot.on_callback_query(filters.regex('^normaluser:') & admins_on_filter)
+@bot.on_callback_query(filters.regex('^normaluser:') & staff_on_filter)
 async def normaluser_page(_, call):
+    if not has_permission(call.from_user.id, "view_users"):
+        return await callAnswer(call, "❌ 权限不足", True)
     page = int(call.data.split(':')[1])
     await callAnswer(call, f'🔍 打开第{page}页')
     normal_users = get_all_emby(Emby.lv == 'b')
@@ -77,8 +86,10 @@ async def create_normaluser_text(users, page):
     text += f"第 {page} 页,共 {math.ceil(len(users) / 20)} 页, 共 {len(users)} 人"
     return text
 
-@bot.on_callback_query(filters.regex('^user_devices$|^devices:') & admins_on_filter)
+@bot.on_callback_query(filters.regex('^user_devices$|^devices:') & staff_on_filter)
 async def user_devices(_, call):
+    if not has_permission(call.from_user.id, "view_users"):
+        return await callAnswer(call, "❌ 权限不足", True)
     # 获取页码
     if call.data == 'user_devices':
         page = 1

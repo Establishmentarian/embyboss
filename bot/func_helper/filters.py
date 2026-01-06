@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 from pyrogram.errors import BadRequest
 from pyrogram.filters import create
-from bot import admins, owner, group, LOGGER
+from bot import admins, owner, group, LOGGER, operators
 from pyrogram.enums import ChatMemberStatus
 
 
@@ -36,6 +36,24 @@ async def admins_filter(update):
     user = update.from_user or update.sender_chat
     uid = user.id
     return bool(uid == owner or uid in admins)
+
+
+async def staff_on_filter(filt, client, update) -> bool:
+    """
+    过滤 owner/admin/operator
+    """
+    user = update.from_user or update.sender_chat
+    uid = user.id
+    return bool(uid == owner or uid in admins or uid in operators)
+
+
+async def staff_filter(update):
+    """
+    过滤 owner/admin/operator
+    """
+    user = update.from_user or update.sender_chat
+    uid = user.id
+    return bool(uid == owner or uid in admins or uid in operators)
 
 
 async def user_in_group_filter(client, update):
@@ -96,6 +114,8 @@ async def user_in_group_on_filter(filt, client, update):
 # 过滤 on_message or on_callback 的admin
 admins_on_filter = create(admins_on_filter)
 admins_filter = create(admins_filter)
+staff_on_filter = create(staff_on_filter)
+staff_filter = create(staff_filter)
 
 # 过滤 是否在群内
 user_in_group_f = create(user_in_group_filter)

@@ -20,6 +20,7 @@ from bot.func_helper.fix_bottons import users_iv_button
 from bot.func_helper.msg_utils import sendPhoto, sendMessage, callAnswer, editMessage
 from bot.func_helper.utils import pwd_create, judge_admins, get_users, cache
 from bot.sql_helper import Session
+from bot.func_helper.package_utils import get_package_key_for_user_record
 from bot.sql_helper.sql_emby import Emby, sql_get_emby, sql_update_emby
 from bot.ranks_helper.ranks_draw import RanksDraw
 from bot.schemas import Yulv, MAX_INT_VALUE, MIN_INT_VALUE
@@ -407,7 +408,8 @@ async def s_rank(_, msg):
     elif msg.sender_chat.id == msg.chat.id:
         sender = msg.chat.id
     reply = await msg.reply(f"已扣除手续5{sakura_b}, 请稍等......加载中")
-    text, i = await users_iv_rank()
+    package_key = get_package_key_for_user_record(e)
+    text, i = await users_iv_rank(package_key)
     t = "❌ 数据库操作失败" if not text else text[0]
     button = await users_iv_button(i, 1, sender or msg.chat.id)
     await asyncio.gather(
@@ -422,8 +424,8 @@ async def s_rank(_, msg):
 
 
 @cache.memoize(ttl=120)
-async def users_iv_rank():
-    with Session() as session:
+async def users_iv_rank(package_key: str):
+    with Session(package_key) as session:
         # 查询 Emby 表的所有数据，且>0 的条数
         p = session.query(func.count()).filter(Emby.iv > 0).scalar()
         if p == 0:
@@ -471,7 +473,9 @@ async def users_iv_pikb(_, call):
             )
 
     await callAnswer(call, f"将为您翻到第 {j} 页")
-    a, b = await users_iv_rank()
+    data = sql_get_emby(tg=call.from_user.id)
+    package_key = get_package_key_for_user_record(data)
+    a, b = await users_iv_rank(package_key)
     button = await users_iv_button(b, j, tg)
     text = a[j - 1]
     await editMessage(call, f"**▎🏆 {sakura_b}风云录**\n\n{text}", buttons=button)

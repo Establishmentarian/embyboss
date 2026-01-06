@@ -1,6 +1,6 @@
 import math
 
-from bot.sql_helper import Base, Session, engine
+from bot.sql_helper import Base, Session, get_engine, package_keys
 from sqlalchemy import (
     Column,
     BigInteger,
@@ -30,7 +30,8 @@ class Code(Base):
     usedtime = Column(DateTime, nullable=True)
 
 
-Code.__table__.create(bind=engine, checkfirst=True)
+for _package_key in package_keys():
+    Code.__table__.create(bind=get_engine(_package_key), checkfirst=True)
 
 
 def sql_add_code(code_list: list, tg: int, us: int):
