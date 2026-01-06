@@ -20,7 +20,7 @@ async def send_update_notification_to_user(tg_id: int, message: str):
         LOGGER.error(f"发送通知失败: {str(e)}")
         return False
 
-async def check_and_notify_series_update(item_data: dict):
+async def check_and_notify_series_update(item_data: dict, package_key: str):
     """检查并通知剧集更新"""
     try:
         # 获取剧集信息
@@ -32,7 +32,7 @@ async def check_and_notify_series_update(item_data: dict):
         if not series_id:
             return
             
-        session = Session()
+        session = Session(package_key)
         try:
             # 查找收藏了这个剧集的用户
             favorites = session.query(EmbyFavorites, Emby).join(
@@ -60,7 +60,7 @@ async def check_and_notify_series_update(item_data: dict):
     except Exception as e:
         LOGGER.error(f"处理剧集更新通知失败: {str(e)}")
 
-async def check_and_notify_person_update(item_data: dict):
+async def check_and_notify_person_update(item_data: dict, package_key: str):
     """检查并通知演员相关更新"""
     try:
         # 获取电影/剧集ID
@@ -69,10 +69,10 @@ async def check_and_notify_person_update(item_data: dict):
             return
             
         # 获取演员信息
-        success, people_list = await emby.item_id_people(item_id=item_id)
+        success, people_list = await emby.item_id_people(item_id=item_id, package_key=package_key)
         if not success:
             return
-        session = Session()
+        session = Session(package_key)
         try:
             for person in people_list:
                 person_id = person.get("Id")
@@ -111,7 +111,7 @@ async def check_and_notify_person_update(item_data: dict):
     except Exception as e:
         LOGGER.error(f"处理演员更新通知失败: {str(e)}")
 
-async def send_new_media_notification(item_data: dict):
+async def send_new_media_notification(item_data: dict, package_key: str):
     """发送新媒体通知"""
     try:
         item_type = item_data.get("Type", "")
@@ -120,13 +120,13 @@ async def send_new_media_notification(item_data: dict):
         # 根据媒体类型构建不同的消息
         if item_type == "Movie":
             # 检查演员相关通知
-            await check_and_notify_person_update(item_data)
+            await check_and_notify_person_update(item_data, package_key)
         elif item_type == "Series":
             # 检查演员相关通知
-            await check_and_notify_person_update(item_data)
+            await check_and_notify_person_update(item_data, package_key)
         elif item_type == "Episode":
             # 检查是否需要发送剧集更新通知
-            await check_and_notify_series_update(item_data)
+            await check_and_notify_series_update(item_data, package_key)
             return
         LOGGER.info(f"已发送新媒体通知: {item_name}")
     except Exception as e:
@@ -153,10 +153,11 @@ async def handle_media_webhook(request: Request):
                 "status": "error",
                 "message": "No data received"
             }
-            
+
+        package_key = request.query_params.get("package")
         event = webhook_data.get("Event", "")
         item_data = webhook_data.get("Item", {})
-        
+
         # 处理新增媒体事件
         if event in ["item.added", "library.new"]:
             # 检查媒体类型
@@ -164,7 +165,7 @@ async def handle_media_webhook(request: Request):
             
             if item_type == "Episode":
                 # 处理剧集更新
-                await check_and_notify_series_update(item_data)
+                await check_and_notify_series_update(item_data, package_key)
                 return {
                     "status": "success",
                     "message": "Episode update notification sent",
@@ -177,7 +178,7 @@ async def handle_media_webhook(request: Request):
                 }
             elif item_type in ["Movie", "Series"]:
                 # 处理新电影或新剧集
-                await send_new_media_notification(item_data)
+                await send_new_media_notification(item_data, package_key)
                 return {
                     "status": "success",
                     "message": "New media notification sent",

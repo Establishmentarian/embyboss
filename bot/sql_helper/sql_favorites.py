@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, UniqueConstraint
-from bot.sql_helper import Base, engine, Session
+from bot.sql_helper import Base, Session, get_engine, package_keys
 from bot import LOGGER
 
 class EmbyFavorites(Base):
@@ -19,9 +19,17 @@ class EmbyFavorites(Base):
         UniqueConstraint('embyid', 'item_id', name='uix_emby_item'),
     ) 
 
-EmbyFavorites.__table__.create(bind=engine, checkfirst=True)
+for _package_key in package_keys():
+    EmbyFavorites.__table__.create(bind=get_engine(_package_key), checkfirst=True)
 
-def sql_add_favorites(embyid: str, embyname: str, item_id: str, item_name: str, is_favorite: bool = True) -> bool:
+def sql_add_favorites(
+    embyid: str,
+    embyname: str,
+    item_id: str,
+    item_name: str,
+    is_favorite: bool = True,
+    package_key: str = None,
+) -> bool:
     """
     添加或删除收藏记录
     以 emby_name 为主要判断依据，因为 emby_id 可能会变化
@@ -34,7 +42,7 @@ def sql_add_favorites(embyid: str, embyname: str, item_id: str, item_name: str, 
         is_favorite: True为收藏，False为取消收藏
     """
     try:
-        with Session() as session:
+        with Session(package_key) as session:
             if is_favorite:
                 # 收藏操作：以 embyname 为主要标识符（embyname 是唯一且不变的）
                 
@@ -113,21 +121,21 @@ def sql_clear_favorites(emby_name: str) -> bool:
     except Exception as e:
         LOGGER.error(f"清除收藏记录失败: {str(e)}")
         return False
-def sql_get_favorites(embyid: str, page: int = 1, page_size: int = 20) -> list:
+def sql_get_favorites(embyid: str, page: int = 1, page_size: int = 20, package_key: str = None) -> list:
     """获取Emby用户的收藏记录"""
     try:
-        with Session() as session:
+        with Session(package_key) as session:
             return session.query(EmbyFavorites).filter(EmbyFavorites.embyid == embyid).offset((page - 1) * page_size).limit(page_size).all()
     except Exception as e:
         LOGGER.error(f"获取收藏记录失败: {str(e)}")
         return []
     
-def sql_update_favorites(condition, **kwargs):
+def sql_update_favorites(condition, package_key: str = None, **kwargs):
     """
     更新收藏记录，根据condition来匹配，批量更新所有符合条件的记录
     处理唯一约束冲突的情况
     """
-    with Session() as session:
+    with Session(package_key) as session:
         try:
             favorites = session.query(EmbyFavorites).filter(condition).all()
             if not favorites:

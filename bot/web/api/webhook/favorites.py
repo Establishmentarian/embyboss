@@ -43,6 +43,8 @@ async def handle_favorite_webhook(request: Request):
                 "message": "No data received"
             }
             
+        package_key = request.query_params.get("package")
+
         # 提取用户和项目信息
         user_data = webhook_data.get("User", {})
         item_data = webhook_data.get("Item", {})
@@ -76,7 +78,8 @@ async def handle_favorite_webhook(request: Request):
             embyname=embyname,
             item_id=item_id,
             item_name=item_name,
-            is_favorite=is_favorite
+            is_favorite=is_favorite,
+            package_key=package_key,
         )
         
         if save_result:
@@ -84,7 +87,7 @@ async def handle_favorite_webhook(request: Request):
             LOGGER.info(f"用户 {embyname} {action}了项目 {item_name}")
             
             # 创建新的session来查询用户
-            session = Session()
+            session = Session(package_key)
             try:
                 user = session.query(Emby).filter(
                     Emby.name == embyname

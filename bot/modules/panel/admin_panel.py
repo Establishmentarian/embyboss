@@ -7,7 +7,7 @@ import asyncio
 from pyrogram import filters
 
 from bot import bot, _open, save_config, bot_photo, LOGGER, bot_name, admins, owner, config
-from bot.func_helper.filters import admins_on_filter
+from bot.func_helper.filters import staff_on_filter
 from bot.schemas import ExDate
 from bot.sql_helper.sql_code import sql_count_code, sql_count_p_code, sql_delete_all_unused, sql_delete_unused_by_days
 from bot.sql_helper.sql_emby import sql_count_emby
@@ -15,10 +15,20 @@ from bot.func_helper.fix_bottons import gm_ikb_content, open_menu_ikb, gog_reste
     back_free_ikb, re_cr_link_ikb, close_it_ikb, ch_link_ikb, date_ikb, cr_paginate, cr_renew_ikb, invite_lv_ikb, checkin_lv_ikb
 from bot.func_helper.msg_utils import callAnswer, editMessage, sendPhoto, callListen, deleteMessage, sendMessage
 from bot.func_helper.utils import open_check, cr_link_one,rn_link_one
+from bot.func_helper.permissions import has_permission
 
 
-@bot.on_callback_query(filters.regex('manage') & admins_on_filter)
+async def _require_perm(call, perm: str) -> bool:
+    if not has_permission(call.from_user.id, perm):
+        await callAnswer(call, "❌ 权限不足", True)
+        return False
+    return True
+
+
+@bot.on_callback_query(filters.regex('manage') & staff_on_filter)
 async def gm_ikb(_, call):
+    if not await _require_perm(call, "view_users"):
+        return
     await callAnswer(call, '✔️ manage面板')
     stat, all_user, tem, timing = await open_check()
     stat = "True" if stat else "False"
@@ -35,8 +45,10 @@ async def gm_ikb(_, call):
 
 
 # 开关注册
-@bot.on_callback_query(filters.regex('open-menu') & admins_on_filter)
+@bot.on_callback_query(filters.regex('open-menu') & staff_on_filter)
 async def open_menu(_, call):
+    if not await _require_perm(call, "open_registration"):
+        return
     await callAnswer(call, '®️ register面板')
     # [开关，注册总数，定时注册] 此间只对emby表中tg用户进行统计
     stat, all_user, tem, timing = await open_check()
@@ -51,8 +63,10 @@ async def open_menu(_, call):
         save_config()
 
 
-@bot.on_callback_query(filters.regex('open_stat') & admins_on_filter)
+@bot.on_callback_query(filters.regex('open_stat') & staff_on_filter)
 async def open_stats(_, call):
+    if not await _require_perm(call, "open_registration"):
+        return
     stat, all_user, tem, timing = await open_check()
     if timing != 0:
         return await callAnswer(call, "🔴 目前正在运行定时注册。\n无法调用，请再次点击，【定时注册】关闭状态", True)
@@ -87,8 +101,10 @@ async def open_stats(_, call):
 change_for_timing_task = None
 
 
-@bot.on_callback_query(filters.regex('open_timing') & admins_on_filter)
+@bot.on_callback_query(filters.regex('open_timing') & staff_on_filter)
 async def open_timing(_, call):
+    if not await _require_perm(call, "open_registration"):
+        return
     global change_for_timing_task
     if _open.timing == 0:
         await callAnswer(call, '⭕ 定时设置')
@@ -167,8 +183,10 @@ async def change_for_timing(timing, tgid, call):
         await deleteMessage(send1, 30)
 
 
-@bot.on_callback_query(filters.regex('all_user_limit') & admins_on_filter)
+@bot.on_callback_query(filters.regex('all_user_limit') & staff_on_filter)
 async def open_all_user_l(_, call):
+    if not await _require_perm(call, "open_registration"):
+        return
     await callAnswer(call, '⭕ 限制人数')
     send = await call.message.edit(
         "🦄 请在 120s 内发送开注总人数，本次修改不会对注册状态改动，如需要开注册请点击打开自由注册\n**注**：总人数满自动关闭注册 取消 /cancel")
@@ -192,8 +210,10 @@ async def open_all_user_l(_, call):
         save_config()
         await editMessage(call, f"✔️ 成功，您已设置 **注册总人数 {a}**", buttons=back_free_ikb)
         LOGGER.info(f"【admin】：管理员 {call.from_user.first_name} 调整了总人数限制：{a}")
-@bot.on_callback_query(filters.regex('open_us') & admins_on_filter)
+@bot.on_callback_query(filters.regex('open_us') & staff_on_filter)
 async def open_us(_, call):
+    if not await _require_perm(call, "open_registration"):
+        return
     await callAnswer(call, '🤖开放账号天数')
     send = await call.message.edit(
         "🦄 请在 120s 内发送开放注册时账号的有效天数，本次修改不会对注册状态改动，如需要开注册请点击打开自由注册\n**注**：总人数满自动关闭注册 取消 /cancel")
@@ -219,8 +239,10 @@ async def open_us(_, call):
         LOGGER.info(f"【admin】：管理员 {call.from_user.first_name} 调整了开放注册时账号的有效天数：{a}")
 
 # 生成注册链接
-@bot.on_callback_query(filters.regex('cr_link') & admins_on_filter)
+@bot.on_callback_query(filters.regex('cr_link') & staff_on_filter)
 async def cr_link(_, call):
+    if not await _require_perm(call, "manage_codes"):
+        return
     await callAnswer(call, '✔️ 创建注册/续期码')
     send = await editMessage(call,
                              f'🎟️ 请回复创建 [天数] [数量] [模式] [续期]\n\n'
@@ -272,8 +294,10 @@ async def cr_link(_, call):
 
 
 # 检索
-@bot.on_callback_query(filters.regex('ch_link') & admins_on_filter)
+@bot.on_callback_query(filters.regex('ch_link') & staff_on_filter)
 async def ch_link(_, call):
+    if not await _require_perm(call, "manage_codes"):
+        return
     await callAnswer(call, '🔍 查看管理们注册码...时长会久一点', True)
     a, b, c, d, f, e = sql_count_code()
     text = f'**🎫 常用code数据：\n• 已使用 - {a}  | • 未使用 - {e}\n• 月码 - {b}   | • 季码 - {c} \n• 半年码 - {d}  | • 年码 - {f}**'
@@ -293,8 +317,10 @@ async def ch_link(_, call):
     await editMessage(call, text, buttons=keyboard)
 
 # 删除未使用码
-@bot.on_callback_query(filters.regex('delete_codes') & admins_on_filter)
+@bot.on_callback_query(filters.regex('delete_codes') & staff_on_filter)
 async def delete_unused_codes(_, call):
+    if not await _require_perm(call, "manage_codes"):
+        return
     await callAnswer(call, '⚠️ 请确认要删除码的类别')
     if call.from_user.id != owner:
         return await callAnswer(call, '🚫 不可以哦！ 你又不是owner', True)
@@ -332,6 +358,8 @@ async def delete_unused_codes(_, call):
 
 @bot.on_callback_query(filters.regex('ch_admin_link'))
 async def ch_admin_link(client, call):
+    if not await _require_perm(call, "manage_codes"):
+        return
     i = int(call.data.split('-')[1])
     if call.from_user.id != owner and call.from_user.id != i:
         return await callAnswer(call, '🚫 你怎么偷窥别人呀! 你又不是owner', True)
@@ -346,6 +374,8 @@ async def ch_admin_link(client, call):
     filters.regex('register_mon') | filters.regex('register_sea')
     | filters.regex('register_half') | filters.regex('register_year') | filters.regex('register_used') | filters.regex('register_unused'))
 async def buy_mon(_, call):
+    if not await _require_perm(call, "manage_codes"):
+        return
     await call.answer('✅ 显示注册码')
     cd, times, u = call.data.split('_')
     n = getattr(ExDate(), times)
@@ -362,6 +392,8 @@ async def buy_mon(_, call):
 # 检索翻页
 @bot.on_callback_query(filters.regex('pagination_keyboard'))
 async def paginate_keyboard(_, call):
+    if not await _require_perm(call, "manage_codes"):
+        return
     j, mode = map(int, call.data.split(":")[1].split('_'))
     await callAnswer(call, f'好的，将为您翻到第 {j} 页')
     a, b = sql_count_p_code(call.from_user.id, mode)
@@ -372,6 +404,8 @@ async def paginate_keyboard(_, call):
 
 @bot.on_callback_query(filters.regex('set_renew'))
 async def set_renew(_, call):
+    if not await _require_perm(call, "manage_codes"):
+        return
     await callAnswer(call, '🚀 进入续期设置')
     try:
         method = call.data.split('-')[1]
@@ -382,8 +416,10 @@ async def set_renew(_, call):
     finally:
         await editMessage(call, text='⭕ **关于用户组的续期功能**\n\n选择点击下方按钮开关任意兑换功能',
                           buttons=cr_renew_ikb())
-@bot.on_callback_query(filters.regex('set_freeze_days') & admins_on_filter)
+@bot.on_callback_query(filters.regex('set_freeze_days') & staff_on_filter)
 async def set_freeze_days(_, call):
+    if not await _require_perm(call, "config_basic"):
+        return
     await callAnswer(call, '⭕ 设置封存天数')
     send = await call.message.edit(
         "🦄 请在 120s 内发送封存账号天数，\n**注**：用户到期后被禁用，再过指定天数后会被删除 取消 /cancel")
@@ -410,6 +446,8 @@ async def set_freeze_days(_, call):
 
 @bot.on_callback_query(filters.regex('set_invite_lv'))
 async def invite_lv_set(_, call):
+    if not await _require_perm(call, "config_basic"):
+        return
     try:
         method = call.data
         if method.startswith('set_invite_lv-'):
@@ -434,6 +472,8 @@ async def invite_lv_set(_, call):
         pass
 @bot.on_callback_query(filters.regex('set_checkin_lv'))
 async def checkin_lv_set(_, call):
+    if not await _require_perm(call, "config_basic"):
+        return
     try:
         method = call.data
         if method.startswith('set_checkin_lv-'):

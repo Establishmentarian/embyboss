@@ -6,7 +6,7 @@ from .func_helper.logger_config import logu, Now
 
 LOGGER = logu(__name__)
 
-from .schemas import Config
+from .schemas import Config, EmbyPackage
 
 config = Config.load_config()
 
@@ -28,6 +28,7 @@ chanel = config.chanel
 bot_photo = config.bot_photo
 _open = config.open
 admins = config.admins
+operators = config.operators
 sakura_b = config.money
 ranks = config.ranks
 prefixes = ['/', '!', '.', '，', '。']
@@ -39,6 +40,42 @@ emby_line = config.emby_line
 emby_whitelist_line = config.emby_whitelist_line
 emby_block = config.emby_block
 extra_emby_libs = config.extra_emby_libs
+packages = config.packages or {}
+if not packages:
+    packages = {
+        "default": EmbyPackage(
+            emby_api=emby_api,
+            emby_url=emby_url,
+            emby_line=emby_line,
+            emby_whitelist_line=emby_whitelist_line,
+            db_host=db_host,
+            db_user=db_user,
+            db_pwd=db_pwd,
+            db_name=db_name,
+            db_port=db_port,
+        )
+    }
+else:
+    for package in packages.values():
+        if package.db_host is None:
+            package.db_host = db_host
+        if package.db_user is None:
+            package.db_user = db_user
+        if package.db_pwd is None:
+            package.db_pwd = db_pwd
+        if package.db_name is None:
+            package.db_name = db_name
+        if package.db_port is None:
+            package.db_port = db_port
+default_package = config.default_package or next(iter(packages))
+if default_package not in packages:
+    default_package = next(iter(packages))
+package_by_level = config.package_by_level or {
+    "a": default_package,
+    "b": default_package,
+    "c": default_package,
+    "d": default_package,
+}
 # # 数据库
 db_host = config.db_host
 db_user = config.db_user
@@ -63,6 +100,25 @@ red_envelope = config.red_envelope
 moviepilot = config.moviepilot
 auto_update = config.auto_update
 api = config.api
+permissions = config.permissions
+
+default_permissions = {
+    "view_users": ["owner", "admin", "operator"],
+    "manage_users": ["owner", "admin"],
+    "open_registration": ["owner", "admin", "operator"],
+    "manage_codes": ["owner", "admin", "operator"],
+    "config_basic": ["owner", "admin"],
+    "config_advanced": ["owner"],
+}
+
+if permissions is None:
+    permissions = default_permissions
+    config.permissions = permissions
+
+if operators is None:
+    operators = []
+    config.operators = operators
+
 save_config()
 
 LOGGER.info("配置文件加载完毕")

@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from asyncio import sleep
 from pyrogram import filters
 from pyrogram.errors import FloodWait
-from bot import bot, prefixes, bot_photo, LOGGER, owner, group
+from bot import bot, prefixes, bot_photo, LOGGER, owner, group, config, default_package
 from bot.func_helper.emby import emby
 from bot.func_helper.filters import admins_on_filter
 from bot.func_helper.utils import tem_deluser, split_long_message
@@ -29,6 +29,20 @@ from bot.sql_helper.sql_emby import get_all_emby, Emby, sql_get_emby, sql_update
 from bot.func_helper.msg_utils import deleteMessage, sendMessage, sendPhoto
 from bot.sql_helper.sql_emby2 import sql_get_emby2
 from bot.sql_helper.sql_favorites import sql_update_favorites, EmbyFavorites
+
+
+def _resolve_package_key(msg):
+    packages = config.packages or {}
+    if not packages:
+        return default_package, ""
+    if len(packages) == 1:
+        return default_package, ""
+    if len(msg.command) >= 3:
+        package_key = msg.command[2]
+        if package_key in packages:
+            return package_key, ""
+        return None, f"❌ 未找到套餐 `{package_key}`，可用套餐：{', '.join(packages.keys())}"
+    return None, f"⚠️ 请指定套餐：`/restore_from_db true <套餐名>`\n可用套餐：{', '.join(packages.keys())}"
 
 
 @bot.on_message(filters.command('syncgroupm', prefixes) & admins_on_filter)
@@ -273,10 +287,13 @@ async def restore_from_db(_, msg):
         return await sendMessage(msg,
                                  '注意: 此操作会将 从数据库中恢复用户到Emby中, 请在需要恢复的群组中执行此命令, 如确定使用请输入 `/restore_from_db true`')
     if confirm_restore == 'true':
+        package_key, error = _resolve_package_key(msg)
+        if not package_key:
+            return await sendMessage(msg, error)
         sign_name = f'{msg.sender_chat.title}' if msg.sender_chat else f'{msg.from_user.first_name}'    
         LOGGER.info(
             f"{sign_name} 执行了从数据库中恢复用户到Emby中的操作")
-        embyusers = get_all_emby(Emby.embyid is not None and Emby.embyid != '')
+        embyusers = get_all_emby(Emby.embyid is not None and Emby.embyid != '', package_key=package_key)
         group_id = group[0]
         # 获取当前执行命令的群组成员
         chat_members = [member.user.id async for member in bot.get_chat_members(chat_id=group_id)]
@@ -286,7 +303,7 @@ async def restore_from_db(_, msg):
             if embyuser.tg in chat_members:
                 try:
                     # emby api操作
-                    data = await emby.emby_create(name=embyuser.name, days=embyuser.us)
+                    data = await emby.emby_create(name=embyuser.name, days=embyuser.us, package_key=package_key)
                     if not data:
                         text += f'**- ❎ 已有此账户名\n- ❎ 或检查有无特殊字符\n- ❎ 或emby服务器连接不通\n- ❎ 跳过恢复用户：#id{embyuser.tg} - [{embyuser.name}](tg://user?id={embyuser.tg}) \n**'
                         LOGGER.error(
@@ -295,10 +312,14 @@ async def restore_from_db(_, msg):
                         tg = embyuser.tg
                         embyid = data[0]
                         pwd = data[1]
-                        sql_update_emby(Emby.tg == tg, embyid=embyid, pwd=pwd)
+                        sql_update_emby(Emby.tg == tg, embyid=embyid, pwd=pwd, package_key=package_key)
                         
                         # 更安全的收藏记录更新，带错误处理
-                        favorites_updated = sql_update_favorites(condition=EmbyFavorites.embyname == embyuser.name, embyid=embyid)
+                        favorites_updated = sql_update_favorites(
+                            condition=EmbyFavorites.embyname == embyuser.name,
+                            embyid=embyid,
+                            package_key=package_key,
+                        )
                         if not favorites_updated:
                             LOGGER.warning(f"用户 {embyuser.name} 的收藏记录更新失败，可能存在数据冲突")
                             text += f'**- ⚠️ 恢复用户：#id{embyuser.tg} - [{embyuser.name}](tg://user?id={embyuser.tg}) 成功，但收藏记录更新失败\n**'

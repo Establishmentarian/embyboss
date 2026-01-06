@@ -9,9 +9,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple, Dict, Any, List, Union
 from contextlib import asynccontextmanager
 
-from bot import emby_url, emby_api, emby_block, extra_emby_libs, LOGGER
+from bot import default_package, emby_block, extra_emby_libs, LOGGER
 from bot.sql_helper.sql_emby import sql_update_emby, Emby
 from bot.func_helper.utils import pwd_create, convert_runtime, cache, Singleton
+from bot.func_helper.package_utils import get_package_config, get_package_key_by_level
+from bot.sql_helper.sql_emby import sql_get_emby
+import inspect
 
 
 def create_policy(admin=False, disable=False, limit: int = 2, block: list = None):
@@ -1019,7 +1022,7 @@ class Embyservice(metaclass=Singleton):
                 "ReplaceUserId": True
             }
             
-            result = await self._request('POST', f'/emby/user_usage_stats/submit_custom_query?api_key={emby_api}', json=data)
+            result = await self._request('POST', f'/emby/user_usage_stats/submit_custom_query?api_key={self.api_key}', json=data)
             if result.success and result.data:
                 ret = result.data
                 if len(ret.get("colums", [])) == 0:
@@ -1463,4 +1466,44 @@ class Embyservice(metaclass=Singleton):
 
 
 # 创建全局实例
-emby = Embyservice(emby_url, emby_api)
+_emby_services = {}
+
+
+def get_package_key_for_emby_id(emby_id: str) -> str:
+    if not emby_id:
+        return default_package
+    record = sql_get_emby(emby_id)
+    if not record:
+        return default_package
+    return getattr(record, "_package_key", get_package_key_by_level(record.lv))
+
+
+def get_emby_service(package_key: str) -> Embyservice:
+    if package_key not in _emby_services:
+        package = get_package_config(package_key)
+        _emby_services[package_key] = Embyservice(package.emby_url, package.emby_api)
+    return _emby_services[package_key]
+
+
+class EmbyRouter:
+    def __getattr__(self, name):
+        default_service = get_emby_service(default_package)
+        target = getattr(default_service, name)
+        if not callable(target):
+            return target
+
+        async def wrapper(*args, **kwargs):
+            package_key = kwargs.pop("package_key", None)
+            signature = inspect.signature(target)
+            bound = signature.bind_partial(*args, **kwargs)
+            emby_id = bound.arguments.get("emby_id") or bound.arguments.get("embyid") or bound.arguments.get("user_id")
+            if not package_key and emby_id:
+                package_key = get_package_key_for_emby_id(emby_id)
+            service = get_emby_service(package_key or default_package)
+            method = getattr(service, name)
+            return await method(*args, **kwargs)
+
+        return wrapper
+
+
+emby = EmbyRouter()

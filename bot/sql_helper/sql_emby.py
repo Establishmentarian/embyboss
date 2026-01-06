@@ -1,7 +1,7 @@
 """
 基本的sql操作
 """
-from bot.sql_helper import Base, Session, engine
+from bot.sql_helper import Base, Session, get_engine, package_keys
 from sqlalchemy import Column, BigInteger, String, DateTime, Integer, case
 from sqlalchemy import func
 from sqlalchemy import or_
@@ -27,14 +27,15 @@ class Emby(Base):
     ch = Column(DateTime, nullable=True)
 
 
-Emby.__table__.create(bind=engine, checkfirst=True)
+for _package_key in package_keys():
+    Emby.__table__.create(bind=get_engine(_package_key), checkfirst=True)
 
 
-def sql_add_emby(tg: int):
+def sql_add_emby(tg: int, package_key: str = None):
     """
     添加一条emby记录，如果tg已存在则忽略
     """
-    with Session() as session:
+    with Session(package_key) as session:
         try:
             emby = Emby(tg=tg)
             session.add(emby)
@@ -42,11 +43,11 @@ def sql_add_emby(tg: int):
         except:
             pass
 
-def sql_delete_emby_by_tg(tg):
+def sql_delete_emby_by_tg(tg, package_key: str = None):
     """
     根据tg删除一条emby记录
     """
-    with Session() as session:
+    with Session(package_key) as session:
         try:
             emby = session.query(Emby).filter(Emby.tg == tg).first()
             if emby:
@@ -62,11 +63,11 @@ def sql_delete_emby_by_tg(tg):
             session.rollback()
             return False
 
-def sql_clear_emby_iv():
+def sql_clear_emby_iv(package_key: str = None):
     """
     清除所有emby的iv
     """
-    with Session() as session:
+    with Session(package_key) as session:
         try:
             session.query(Emby).update({Emby.iv: 0})
             session.commit()
@@ -75,14 +76,13 @@ def sql_clear_emby_iv():
             LOGGER.error(f"清除所有emby的iv时发生异常 {e}")
             return False
 
-def sql_delete_emby(tg=None, embyid=None, name=None):
+def sql_delete_emby(tg=None, embyid=None, name=None, package_key: str = None):
     """
     根据tg, embyid或name删除一条emby记录
     至少需要提供一个参数，如果所有参数都为None，则返回False
     """
-    with Session() as session:
+    def _delete_with_session(session):
         try:
-            # 构建条件列表，只包含非None的参数
             conditions = []
             if tg is not None:
                 conditions.append(Emby.tg == tg)
@@ -90,17 +90,13 @@ def sql_delete_emby(tg=None, embyid=None, name=None):
                 conditions.append(Emby.embyid == embyid)
             if name is not None:
                 conditions.append(Emby.name == name)
-            
-            # 如果所有参数都为None，返回False
+
             if not conditions:
                 LOGGER.warning("sql_delete_emby: 所有参数都为None，无法删除记录")
                 return False
-            
-            # 使用or_组合所有条件
+
             condition = or_(*conditions)
             LOGGER.debug(f"删除数据库记录，条件: tg={tg}, embyid={embyid}, name={name}")
-            
-            # 用filter来过滤，使用with_for_update锁定记录
             emby = session.query(Emby).filter(condition).with_for_update().first()
             if emby:
                 LOGGER.info(f"删除数据库记录 {emby.name} - {emby.embyid} - {emby.tg}")
@@ -121,10 +117,21 @@ def sql_delete_emby(tg=None, embyid=None, name=None):
             session.rollback()
             return False
 
+    if package_key:
+        with Session(package_key) as session:
+            return _delete_with_session(session)
 
-def sql_update_embys(some_list: list, method=None):
+    for key in package_keys():
+        with Session(key) as session:
+            result = _delete_with_session(session)
+            if result:
+                return True
+    return False
+
+
+def sql_update_embys(some_list: list, method=None, package_key: str = None):
     """ 根据list中的tg值批量更新一些值 ，此方法不可更新主键"""
-    with Session() as session:
+    with Session(package_key) as session:
         if method == 'iv':
             try:
                 mappings = [{"tg": c[0], "iv": c[1]} for c in some_list]
@@ -156,17 +163,28 @@ def sql_update_embys(some_list: list, method=None):
                 return False
 
 
-def sql_get_emby(tg):
+def sql_get_emby(tg, package_key: str = None):
     """
     查询一条emby记录，可以根据tg, embyid或者name来查询
     """
-    with Session() as session:
+    def _get_with_session(session):
         try:
-            # 使用or_方法来表示或者的逻辑，如果有tg就用tg，如果有embyid就用embyid，如果有name就用name，如果都没有就返回None
             emby = session.query(Emby).filter(or_(Emby.tg == tg, Emby.name == tg, Emby.embyid == tg)).first()
             return emby
         except:
             return None
+
+    if package_key:
+        with Session(package_key) as session:
+            return _get_with_session(session)
+
+    for key in package_keys():
+        with Session(key) as session:
+            emby = _get_with_session(session)
+            if emby:
+                setattr(emby, "_package_key", key)
+                return emby
+    return None
 
 
 # def sql_get_emby_by_embyid(embyid):
@@ -189,29 +207,38 @@ def sql_get_emby(tg):
 #             return False, None
 
 
-def get_all_emby(condition):
+def get_all_emby(condition, package_key: str = None):
     """
     查询所有emby记录
     """
-    with Session() as session:
+    def _get_all_with_session(session):
         try:
-            embies = session.query(Emby).filter(condition).all()
-            return embies
+            return session.query(Emby).filter(condition).all()
         except:
             return None
 
+    if package_key:
+        with Session(package_key) as session:
+            return _get_all_with_session(session)
 
-def sql_update_emby(condition, **kwargs):
+    all_embies = []
+    for key in package_keys():
+        with Session(key) as session:
+            embies = _get_all_with_session(session)
+            if embies:
+                all_embies.extend(embies)
+    return all_embies
+
+
+def sql_update_emby(condition, package_key: str = None, **kwargs):
     """
     更新一条emby记录，根据condition来匹配，然后更新其他的字段
     """
-    with Session() as session:
+    def _update_with_session(session):
         try:
-            # 用filter来过滤，注意要加括号
             emby = session.query(Emby).filter(condition).first()
             if emby is None:
                 return False
-            # 然后用setattr方法来更新其他的字段，如果有就更新，如果没有就保持原样
             for k, v in kwargs.items():
                 setattr(emby, k, v)
             session.commit()
@@ -219,6 +246,16 @@ def sql_update_emby(condition, **kwargs):
         except Exception as e:
             LOGGER.error(e)
             return False
+
+    if package_key:
+        with Session(package_key) as session:
+            return _update_with_session(session)
+
+    for key in package_keys():
+        with Session(key) as session:
+            if _update_with_session(session):
+                return True
+    return False
 
 
 #
@@ -236,22 +273,34 @@ def sql_update_emby(condition, **kwargs):
 #             return False
 
 
-def sql_count_emby():
+def sql_count_emby(package_key: str = None):
     """
     # 检索有tg和embyid的emby记录的数量，以及Emby.lv =='a'条件下的数量
     # count = sql_count_emby()
     :return: int, int, int
     """
-    with Session() as session:
+    def _count_with_session(session):
         try:
-            # 使用func.count来计算数量，使用filter来过滤条件
             count = session.query(
                 func.count(Emby.tg).label("tg_count"),
                 func.count(Emby.embyid).label("embyid_count"),
                 func.count(case((Emby.lv == "a", 1))).label("lv_a_count")
             ).first()
-        except Exception as e:
-            # print(e)
+        except Exception:
             return None, None, None
-        else:
-            return count.tg_count, count.embyid_count, count.lv_a_count
+        return count.tg_count, count.embyid_count, count.lv_a_count
+
+    if package_key:
+        with Session(package_key) as session:
+            return _count_with_session(session)
+
+    totals = [0, 0, 0]
+    for key in package_keys():
+        with Session(key) as session:
+            counts = _count_with_session(session)
+            if counts[0] is None:
+                continue
+            totals[0] += counts[0]
+            totals[1] += counts[1]
+            totals[2] += counts[2]
+    return tuple(totals)

@@ -7,16 +7,20 @@ from pyrogram import filters
 from pyrogram.errors import BadRequest
 from bot import bot, prefixes, owner, admins, LOGGER, extra_emby_libs, config
 from bot.func_helper.emby import emby
-from bot.func_helper.filters import admins_on_filter
+from bot.func_helper.filters import staff_on_filter
 from bot.func_helper.fix_bottons import cr_kk_ikb, gog_rester_ikb
 from bot.func_helper.msg_utils import deleteMessage, sendMessage, editMessage
 from bot.func_helper.utils import judge_admins, cr_link_two, tem_deluser
+from bot.func_helper.permissions import has_permission
+from bot.func_helper.package_utils import get_package_key_by_level
 from bot.sql_helper.sql_emby import sql_add_emby, sql_get_emby, sql_update_emby, Emby
 
 
 # 管理用户
-@bot.on_message(filters.command('kk', prefixes) & admins_on_filter)
+@bot.on_message(filters.command('kk', prefixes) & staff_on_filter)
 async def user_info(_, msg):
+    if not has_permission(msg.from_user.id, "manage_users"):
+        return await sendMessage(msg, "❌ 权限不足，无法管理用户。", timer=60)
     await deleteMessage(msg)
     if msg.reply_to_message is None:
         try:
@@ -36,7 +40,8 @@ async def user_info(_, msg):
         except AttributeError:
             pass
         else:
-            sql_add_emby(uid)
+            package_key = get_package_key_by_level("d")
+            sql_add_emby(uid, package_key=package_key)
             text, keyboard = await cr_kk_ikb(uid, first.first_name)
             await sendMessage(msg, text=text, buttons=keyboard)  # protect_content=True 移除禁止复制
 
@@ -49,7 +54,8 @@ async def user_info(_, msg):
         except AttributeError:
             pass
 
-        sql_add_emby(uid)
+        package_key = get_package_key_by_level("d")
+        sql_add_emby(uid, package_key=package_key)
         text, keyboard = await cr_kk_ikb(uid, msg.reply_to_message.from_user.first_name)
         await sendMessage(msg, text=text, buttons=keyboard)
 
@@ -57,6 +63,8 @@ async def user_info(_, msg):
 # 封禁或者解除
 @bot.on_callback_query(filters.regex('user_ban'))
 async def kk_user_ban(_, call):
+    if not has_permission(call.from_user.id, "manage_users"):
+        return await call.answer("❌ 权限不足", show_alert=True)
     if not judge_admins(call.from_user.id):
         return await call.answer("请不要以下犯上 ok？", show_alert=True)
 
@@ -102,6 +110,8 @@ async def kk_user_ban(_, call):
 # 开通额外媒体库
 @bot.on_callback_query(filters.regex('embyextralib_unblock'))
 async def user_embyextralib_unblock(_, call):
+    if not has_permission(call.from_user.id, "manage_users"):
+        return await call.answer("❌ 权限不足", show_alert=True)
     if not judge_admins(call.from_user.id):
         return await call.answer("请不要以下犯上 ok？", show_alert=True)
     await call.answer('🎬 正在为TA开启显示ing')
@@ -132,6 +142,8 @@ async def user_embyextralib_unblock(_, call):
 # 隐藏额外媒体库
 @bot.on_callback_query(filters.regex('embyextralib_block'))
 async def user_embyextralib_block(_, call):
+    if not has_permission(call.from_user.id, "manage_users"):
+        return await call.answer("❌ 权限不足", show_alert=True)
     if not judge_admins(call.from_user.id):
         return await call.answer("请不要以下犯上 ok？", show_alert=True)
     await call.answer('🎬 正在为TA关闭显示ing')
@@ -162,6 +174,8 @@ async def user_embyextralib_block(_, call):
 # 赠送资格
 @bot.on_callback_query(filters.regex('gift'))
 async def gift(_, call):
+    if not has_permission(call.from_user.id, "manage_users"):
+        return await call.answer("❌ 权限不足", show_alert=True)
     if not judge_admins(call.from_user.id):
         return await call.answer("请不要以下犯上 ok？", show_alert=True)
 
@@ -186,6 +200,8 @@ async def gift(_, call):
 # 删除账户
 @bot.on_callback_query(filters.regex('closeemby'))
 async def close_emby(_, call):
+    if not has_permission(call.from_user.id, "manage_users"):
+        return await call.answer("❌ 权限不足", show_alert=True)
     if not judge_admins(call.from_user.id):
         return await call.answer("请不要以下犯上 ok？", show_alert=True)
 

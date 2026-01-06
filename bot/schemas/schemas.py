@@ -1,7 +1,7 @@
 import json
 import os
 from pydantic import BaseModel, Field
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 # 嵌套式的数据设计，规范数据 config.json
 
@@ -111,6 +111,17 @@ class MP(BaseModel):
     download_log_chatid: Optional[int] = None
     lv: Optional[str] = "b"
 
+class EmbyPackage(BaseModel):
+    emby_api: str
+    emby_url: str
+    emby_line: str
+    emby_whitelist_line: Optional[str] = None
+    db_host: Optional[str] = None
+    db_user: Optional[str] = None
+    db_pwd: Optional[str] = None
+    db_name: Optional[str] = None
+    db_port: Optional[int] = 3306
+
 class AutoUpdate(BaseModel):
     status: bool = True
     git_repo: Optional[str] = "berry8838/Sakura_embyboss"  # github仓库名/魔改的请填自己的仓库
@@ -145,6 +156,7 @@ class Config(BaseModel):
     bot_photo: str
     open: Open
     admins: Optional[List[int]] = []
+    operators: Optional[List[int]] = []
     money: str
     emby_api: str
     emby_url: str
@@ -180,6 +192,9 @@ class Config(BaseModel):
     freeze_days: int = 5
     # 白名单用户专属的emby线路
     emby_whitelist_line: Optional[str] = None
+    packages: Optional[Dict[str, EmbyPackage]] = None
+    package_by_level: Optional[Dict[str, str]] = None
+    default_package: Optional[str] = None
     # 被拦截的user-agent模式列表
     blocked_clients: Optional[List[str]] = None
     # 是否在检测到可疑客户端时终止会话
@@ -190,6 +205,7 @@ class Config(BaseModel):
     auto_update: AutoUpdate = Field(default_factory=AutoUpdate)
     red_envelope: RedEnvelope = Field(default_factory=RedEnvelope)
     api: API = Field(default_factory=API)
+    permissions: Optional[Dict[str, List[str]]] = None
 
     def __init__(self, **data):
         super().__init__(**data)

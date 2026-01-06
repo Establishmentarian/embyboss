@@ -12,10 +12,81 @@ from bot.func_helper.fix_bottons import config_preparation, close_it_ikb, back_c
 from bot.func_helper.msg_utils import deleteMessage, editMessage, callAnswer, callListen, sendPhoto, sendFile
 from bot.func_helper.scheduler import scheduler
 from bot.scheduler.sync_mp_download import sync_download_tasks
+from bot.func_helper.permissions import has_permission, get_user_role
+from bot.schemas import EmbyPackage
+import json
+from pyromod.helpers import ikb
+
+
+def _permission_text() -> str:
+    lines = ["**🔐 当前权限配置**\n"]
+    for perm, roles in (config.permissions or {}).items():
+        roles_text = ", ".join(roles) if roles else "无"
+        lines.append(f"- `{perm}`: {roles_text}")
+    return "\n".join(lines)
+
+
+def _format_roles() -> str:
+    return "角色：`owner` / `admin` / `operator`"
+
+
+def _perm_panel_buttons() -> "InlineKeyboardMarkup":
+    labels = {
+        "view_users": "查看用户数据",
+        "manage_users": "管理用户",
+        "open_registration": "开放注册",
+        "manage_codes": "注册码/续期码",
+        "config_basic": "基础配置",
+        "config_advanced": "高级配置",
+    }
+    rows = []
+    for key, label in labels.items():
+        roles = (config.permissions or {}).get(key, [])
+        enabled = "operator" in roles
+        status = "✅" if enabled else "❎"
+        rows.append([(f"{status} 允许次级管理员：{label}", f"perm_toggle:{key}")])
+    rows.append([("👥 设置次级管理员", "set_operators"), ("👮🏻 设置管理员", "set_admins")])
+    rows.append([("🔙 返回", "back_config")])
+    return ikb(rows)
+
+
+def _package_panel_buttons() -> "InlineKeyboardMarkup":
+    rows = []
+    packages = config.packages or {}
+    if not packages:
+        rows.append([("➕ 新建套餐", "package_add")])
+    else:
+        for key in packages.keys():
+            rows.append([(f"📦 {key}", f"package_edit:{key}")])
+        rows.append([("➕ 新建套餐", "package_add")])
+    rows.append([("🔙 返回", "back_config")])
+    return ikb(rows)
+
+
+def _package_edit_buttons(package_key: str) -> "InlineKeyboardMarkup":
+    rows = [
+        [("API Key", f"package_set:{package_key}:emby_api"), ("Emby 地址", f"package_set:{package_key}:emby_url")],
+        [("线路(普通)", f"package_set:{package_key}:emby_line"), ("线路(白名单)", f"package_set:{package_key}:emby_whitelist_line")],
+        [("DB Host", f"package_set:{package_key}:db_host"), ("DB User", f"package_set:{package_key}:db_user")],
+        [("DB Pwd", f"package_set:{package_key}:db_pwd"), ("DB Name", f"package_set:{package_key}:db_name")],
+        [("DB Port", f"package_set:{package_key}:db_port"), ("设为默认", f"package_default:{package_key}")],
+        [("删除套餐", f"package_delete:{package_key}")],
+        [("🔙 返回", "package_panel")],
+    ]
+    return ikb(rows)
+
+
+async def _ensure_perm(call, perm: str):
+    if not has_permission(call.from_user.id, perm):
+        await callAnswer(call, "❌ 权限不足", True)
+        return False
+    return True
 
 
 @bot.on_message(filters.command('config', prefixes=prefixes) & admins_on_filter)
 async def config_p_set(_, msg):
+    if not has_permission(msg.from_user.id, "config_basic"):
+        return await sendPhoto(msg, photo=bot_photo, caption="❌ 权限不足，无法进入配置面板。")
     await deleteMessage(msg)
     await sendPhoto(msg, photo=bot_photo, caption="🌸 欢迎回来！\n\n👇点击你要修改的内容。",
                     buttons=config_preparation())
@@ -23,12 +94,16 @@ async def config_p_set(_, msg):
 
 @bot.on_callback_query(filters.regex('back_config') & admins_on_filter)
 async def config_p_re(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, "✅ config")
     await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容。", buttons=config_preparation())
 
 
 @bot.on_callback_query(filters.regex("log_out") & admins_on_filter)
 async def log_out(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, '🌐查询中...')
     # file位置以main.py为准
     send = await sendFile(call, file=f"log/log_{Now:%Y%m%d}.txt", file_name=f'log_{Now:%Y-%m-%d}.txt',
@@ -41,6 +116,8 @@ async def log_out(_, call):
 
 @bot.on_callback_query(filters.regex("set_tz") & admins_on_filter)
 async def set_tz(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     await callAnswer(call, '📌 设置探针')
     send = await editMessage(call,
                              "【设置探针】\n\n请依次输入探针地址，api_token，设置的检测多个id 如：\n**【地址】https://tz.susuyyds.xyz\n【api_token】xxxxxx\n【数字】1 2 3**\n取消点击 /cancel")
@@ -77,6 +154,8 @@ async def set_tz(_, call):
 # 设置 emby 线路
 @bot.on_callback_query(filters.regex('set_line') & admins_on_filter)
 async def set_emby_line(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     await callAnswer(call, '📌 设置emby线路')
     send = await editMessage(call,
                              "💘【设置线路】\n\n对我发送向emby用户展示的emby地址吧\n取消点击 /cancel")
@@ -100,6 +179,8 @@ async def set_emby_line(_, call):
 
 @bot.on_callback_query(filters.regex('set_whitelist_line') & admins_on_filter)
 async def set_whitelist_emby_line(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     await callAnswer(call, '🌟 设置白名单线路')
     send = await editMessage(call,
                              "🌟【设置白名单线路】\n\n对我发送白名单用户专属的emby地址\n取消点击 /cancel")
@@ -124,6 +205,8 @@ async def set_whitelist_emby_line(_, call):
 # 设置需要显示/隐藏的库
 @bot.on_callback_query(filters.regex('set_block') & admins_on_filter)
 async def set_block(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     await callAnswer(call, '📺 设置显隐媒体库')
     send = await editMessage(call,
                              "🎬**【设置需要显示/隐藏的库】**\n\n对我发送库的名字，多个**中文逗号**隔开\n例: `SGNB 特效电影，纪录片`\n超时自动退出 or 点 /cancel 退出")
@@ -196,6 +279,8 @@ async def set_block(_, call):
 
 @bot.on_callback_query(filters.regex('set_update') & admins_on_filter)
 async def set_auto_update(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     try:
         # 简化逻辑，只设置一次
         auto_update.status = not auto_update.status
@@ -217,6 +302,8 @@ async def set_auto_update(_, call):
 @bot.on_callback_query(filters.regex('^set_mp$') & admins_on_filter)
 async def mp_config_panel(_, call):
     """MoviePilot 设置面板"""
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, '⚙️ MoviePilot 设置')
     lv_text = '无'
     if moviepilot.lv == 'a':
@@ -234,6 +321,8 @@ async def mp_config_panel(_, call):
 @bot.on_callback_query(filters.regex('^set_mp_status$') & admins_on_filter)
 async def set_mp_status(_, call):
     """设置点播功能开关"""
+    if not await _ensure_perm(call, "config_basic"):
+        return
     try:
         moviepilot.status = not moviepilot.status
         if moviepilot.status:
@@ -252,6 +341,8 @@ async def set_mp_status(_, call):
 @bot.on_callback_query(filters.regex('^set_mp_price$') & admins_on_filter)
 async def set_mp_price(_, call):
     """设置点播价格"""
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, '💰 设置点播价格')
     await editMessage(call,
                      f"💰 设置点播价格\n\n"
@@ -278,6 +369,8 @@ async def set_mp_price(_, call):
 @bot.on_callback_query(filters.regex('set_mp_lv') & admins_on_filter)
 async def set_mp_lv(_, call):
     """设置用户权限"""
+    if not await _ensure_perm(call, "config_basic"):
+        return
     moviepilot.lv = 'a' if moviepilot.lv == 'b' else 'b'
     message = '✅ 已设置为仅白名单用户可用' if moviepilot.lv == 'a' else '✅ 已设置为普通用户可用'
     await callAnswer(call, message, True)
@@ -287,6 +380,8 @@ async def set_mp_lv(_, call):
 @bot.on_callback_query(filters.regex('set_mp_log_channel') & admins_on_filter)
 async def set_mp_log_channel(_, call):
     """设置日志频道"""
+    if not await _ensure_perm(call, "config_advanced"):
+        return
     await callAnswer(call, '📝 设置日志频道')
     await editMessage(call,
                      f"📝 设置日志频道\n\n"
@@ -311,6 +406,8 @@ async def set_mp_log_channel(_, call):
 
 @bot.on_callback_query(filters.regex('leave_ban') & admins_on_filter)
 async def open_leave_ban(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     # 切换状态
     _open.leave_ban = not _open.leave_ban
     # 根据当前状态发送消息
@@ -329,6 +426,8 @@ async def open_leave_ban(_, call):
 
 @bot.on_callback_query(filters.regex('set_uplays') & admins_on_filter)
 async def set_user_playrank(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     _open.uplays = not _open.uplays
     if not _open.uplays:
         message = '👮🏻‍♂️ 您已关闭 观影榜结算，自动召唤观影榜将不被计算积分'
@@ -345,6 +444,8 @@ async def set_user_playrank(_, call):
 
 @bot.on_callback_query(filters.regex('set_kk_gift_days') & admins_on_filter)
 async def set_kk_gift_days(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, '📌 设置赠送资格天数')
     send = await editMessage(call,
                              f"🤝【设置kk赠送资格】\n\n请输入一个数字\n取消点击 /cancel\n\n当前赠送资格天数: {config.kk_gift_days}")
@@ -375,6 +476,8 @@ async def set_kk_gift_days(_, call):
 
 @bot.on_callback_query(filters.regex('set_fuxx_pitao') & admins_on_filter)
 async def set_fuxx_pitao(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     config.fuxx_pitao = not config.fuxx_pitao
     if not config.fuxx_pitao:
         message = '👮🏻‍♂️ 您已关闭 皮套过滤功能，现在皮套人的消息不会被处理'
@@ -389,6 +492,8 @@ async def set_fuxx_pitao(_, call):
     LOGGER.info(log_message)
 @bot.on_callback_query(filters.regex('set_red_envelope_status') & admins_on_filter)
 async def set_red_envelope_status(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     config.red_envelope.status = not config.red_envelope.status
     if config.red_envelope.status:
         message = '👮🏻‍♂️ 您已开启 红包功能，现在用户可以发送红包了'
@@ -403,6 +508,8 @@ async def set_red_envelope_status(_, call):
 
 @bot.on_callback_query(filters.regex('set_red_envelope_allow_private') & admins_on_filter)
 async def set_red_envelope_allow_private(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     config.red_envelope.allow_private = not config.red_envelope.allow_private
     if config.red_envelope.allow_private:
         message = '👮🏻‍♂️ 您已开启 专属红包，现在用户可以发送专属红包了'
@@ -417,6 +524,8 @@ async def set_red_envelope_allow_private(_, call):
 
 @bot.on_callback_query(filters.regex('set_activity_check_days') & admins_on_filter)
 async def set_activity_check_days(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
     await callAnswer(call, '📌 设置活跃检测天数')
     send = await editMessage(call,
                              f"🕰️【设置活跃检测天数】\n\n请输入一个数字（天数）\n取消点击 /cancel\n\n当前活跃检测天数: {config.activity_check_days}")
@@ -445,3 +554,297 @@ async def set_activity_check_days(_, call):
                               f"🕰️ 【活跃检测天数】\n\n{days}天 **Done!**",
                               buttons=back_config_p_ikb)
             LOGGER.info(f"【admin】：{call.from_user.id} - 更新活跃检测天数为{days}天完成")
+
+
+@bot.on_callback_query(filters.regex("perm_panel") & admins_on_filter)
+async def perm_panel(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    role = get_user_role(call.from_user.id)
+    text = f"**🧭 权限管理**\n\n- 当前角色：`{role}`\n- 次级管理员列表：{', '.join(map(str, config.operators)) or '无'}\n\n"
+    text += _permission_text() + f"\n\n{_format_roles()}"
+    await editMessage(call, text, buttons=_perm_panel_buttons())
+
+
+@bot.on_callback_query(filters.regex("set_operators") & admins_on_filter)
+async def set_operators(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    await callAnswer(call, "🔧 设置次级管理员")
+    send = await editMessage(call, "请输入次级管理员 TGID，空格分隔。清空请输入 `none`，取消 /cancel")
+    if send is False:
+        return
+    txt = await callListen(call, 120, buttons=back_set_ikb("set_operators"))
+    if txt is False:
+        return
+    if txt.text == "/cancel":
+        await txt.delete()
+        return await editMessage(call, "已取消。", buttons=back_config_p_ikb)
+    content = txt.text.strip()
+    await txt.delete()
+    if content.lower() == "none":
+        config.operators = []
+    else:
+        ids = [int(x) for x in content.split()]
+        config.operators = ids
+    save_config()
+    await editMessage(call, f"✅ 已更新次级管理员：{', '.join(map(str, config.operators)) or '无'}", buttons=back_config_p_ikb)
+
+
+@bot.on_callback_query(filters.regex("set_admins") & admins_on_filter)
+async def set_admins(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    await callAnswer(call, "👮🏻 设置管理员")
+    send = await editMessage(call, "请输入管理员 TGID，空格分隔。清空请输入 `none`，取消 /cancel")
+    if send is False:
+        return
+    txt = await callListen(call, 120, buttons=back_set_ikb("set_admins"))
+    if txt is False:
+        return
+    if txt.text == "/cancel":
+        await txt.delete()
+        return await editMessage(call, "已取消。", buttons=back_config_p_ikb)
+    content = txt.text.strip()
+    await txt.delete()
+    if content.lower() == "none":
+        config.admins = []
+    else:
+        ids = [int(x) for x in content.split()]
+        config.admins = ids
+    save_config()
+    await editMessage(call, f"✅ 已更新管理员：{', '.join(map(str, config.admins)) or '无'}", buttons=back_config_p_ikb)
+
+
+@bot.on_callback_query(filters.regex("set_permissions") & admins_on_filter)
+async def set_permissions(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    await callAnswer(call, "🔧 设置权限")
+    available_perms = ", ".join((config.permissions or {}).keys())
+    help_text = (
+        "请按行输入权限配置，格式：`权限名=角色1,角色2`\n"
+        "例如：`manage_codes=owner,admin,operator`\n"
+        "支持权限：`{}`\n"
+        "{}"
+    ).format(available_perms, _format_roles())
+    send = await editMessage(call, help_text)
+    if send is False:
+        return
+    txt = await callListen(call, 180, buttons=back_set_ikb("set_permissions"))
+    if txt is False:
+        return
+    if txt.text == "/cancel":
+        await txt.delete()
+        return await editMessage(call, "已取消。", buttons=back_config_p_ikb)
+    await txt.delete()
+    new_permissions = {}
+    for line in txt.text.splitlines():
+        if not line.strip():
+            continue
+        if "=" not in line:
+            return await editMessage(call, f"格式错误：`{line}`", buttons=back_set_ikb("set_permissions"))
+        key, roles = line.split("=", 1)
+        new_permissions[key.strip()] = [r.strip() for r in roles.split(",") if r.strip()]
+    config.permissions = new_permissions
+    save_config()
+    await editMessage(call, "✅ 权限已更新。", buttons=back_config_p_ikb)
+
+
+@bot.on_callback_query(filters.regex(r"^perm_toggle:") & admins_on_filter)
+async def perm_toggle(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    _, perm_key = call.data.split(":", 1)
+    current = (config.permissions or {}).get(perm_key, [])
+    if "operator" in current:
+        current = [r for r in current if r != "operator"]
+    else:
+        current.append("operator")
+    config.permissions[perm_key] = current
+    save_config()
+    await perm_panel(_, call)
+
+
+@bot.on_callback_query(filters.regex("set_config_any") & admins_on_filter)
+async def set_config_any(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    await callAnswer(call, "🧩 配置编辑器")
+    help_text = (
+        "请输入：`路径=值`，支持 JSON 值。\n"
+        "示例：`open.all_user=500`\n"
+        "示例：`emby_block=[\"A\",\"B\"]`\n"
+        "取消 /cancel"
+    )
+    send = await editMessage(call, help_text)
+    if send is False:
+        return
+    txt = await callListen(call, 180, buttons=back_set_ikb("set_config_any"))
+    if txt is False:
+        return
+    if txt.text == "/cancel":
+        await txt.delete()
+        return await editMessage(call, "已取消。", buttons=back_config_p_ikb)
+    await txt.delete()
+    if "=" not in txt.text:
+        return await editMessage(call, "格式错误，请使用 `路径=值`。", buttons=back_set_ikb("set_config_any"))
+    path, raw_value = txt.text.split("=", 1)
+    path = path.strip()
+    raw_value = raw_value.strip()
+    try:
+        value = json.loads(raw_value)
+    except json.JSONDecodeError:
+        value = raw_value
+    try:
+        target = config
+        parts = path.split(".")
+        for part in parts[:-1]:
+            if isinstance(target, dict):
+                target = target.setdefault(part, {})
+            else:
+                target = getattr(target, part)
+        if isinstance(target, dict):
+            target[parts[-1]] = value
+        else:
+            setattr(target, parts[-1], value)
+        save_config()
+    except Exception as exc:
+        return await editMessage(call, f"❌ 更新失败：{exc}", buttons=back_set_ikb("set_config_any"))
+    await editMessage(call, f"✅ 已更新 `{path}`。", buttons=back_config_p_ikb)
+
+
+@bot.on_callback_query(filters.regex("admin_list") & admins_on_filter)
+async def admin_list(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    text = "**👥 管理员列表**\n\n"
+    text += f"管理员: {', '.join(map(str, config.admins)) or '无'}\n"
+    text += f"次级管理员: {', '.join(map(str, config.operators)) or '无'}"
+    await editMessage(call, text, buttons=ikb([[("👮🏻 设置管理员", "set_admins"), ("👥 设置次级管理员", "set_operators")],
+                                               [("🔙 返回", "back_config")]]))
+
+
+@bot.on_callback_query(filters.regex("package_panel") & admins_on_filter)
+async def package_panel(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    await editMessage(call, "📦 请选择要配置的套餐：", buttons=_package_panel_buttons())
+
+
+@bot.on_callback_query(filters.regex("package_add") & admins_on_filter)
+async def package_add(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    await callAnswer(call, "➕ 新建套餐")
+    send = await editMessage(call, "请输入套餐名称（英文/数字，下划线），取消 /cancel")
+    if send is False:
+        return
+    txt = await callListen(call, 120, buttons=back_set_ikb("package_add"))
+    if txt is False:
+        return
+    if txt.text == "/cancel":
+        await txt.delete()
+        return await package_panel(_, call)
+    name = txt.text.strip()
+    await txt.delete()
+    if not name:
+        return await editMessage(call, "名称不能为空。", buttons=back_set_ikb("package_add"))
+    config.packages = config.packages or {}
+    if name in config.packages:
+        return await editMessage(call, f"套餐 `{name}` 已存在。", buttons=back_set_ikb("package_add"))
+    config.packages[name] = EmbyPackage(
+        emby_api="",
+        emby_url="",
+        emby_line="",
+        emby_whitelist_line=None,
+        db_host=config.db_host,
+        db_user=config.db_user,
+        db_pwd=config.db_pwd,
+        db_name=config.db_name,
+        db_port=config.db_port,
+    )
+    save_config()
+    await editMessage(call, f"✅ 已创建套餐 `{name}`。", buttons=_package_edit_buttons(name))
+
+
+@bot.on_callback_query(filters.regex(r"^package_edit:") & admins_on_filter)
+async def package_edit(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    package_key = call.data.split(":", 1)[1]
+    package = (config.packages or {}).get(package_key)
+    if not package:
+        return await editMessage(call, "❌ 未找到套餐。", buttons=_package_panel_buttons())
+    text = (
+        f"**📦 套餐 {package_key}**\n\n"
+        f"- emby_url: `{package.emby_url}`\n"
+        f"- emby_api: `{package.emby_api}`\n"
+        f"- emby_line: `{package.emby_line}`\n"
+        f"- emby_whitelist_line: `{package.emby_whitelist_line}`\n"
+        f"- db_host: `{package.db_host}`\n"
+        f"- db_user: `{package.db_user}`\n"
+        f"- db_pwd: `{package.db_pwd}`\n"
+        f"- db_name: `{package.db_name}`\n"
+        f"- db_port: `{package.db_port}`\n"
+    )
+    await editMessage(call, text, buttons=_package_edit_buttons(package_key))
+
+
+@bot.on_callback_query(filters.regex(r"^package_set:") & admins_on_filter)
+async def package_set(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    _, package_key, field = call.data.split(":", 2)
+    package = (config.packages or {}).get(package_key)
+    if not package:
+        return await editMessage(call, "❌ 未找到套餐。", buttons=_package_panel_buttons())
+    await callAnswer(call, "🛠️ 修改字段")
+    send = await editMessage(call, f"请输入 `{field}` 的新值，取消 /cancel")
+    if send is False:
+        return
+    txt = await callListen(call, 180, buttons=_package_edit_buttons(package_key))
+    if txt is False:
+        return
+    if txt.text == "/cancel":
+        await txt.delete()
+        return await package_edit(_, call)
+    value = txt.text.strip()
+    await txt.delete()
+    try:
+        if field == "db_port":
+            value = int(value)
+        if field == "emby_whitelist_line" and value.lower() == "none":
+            value = None
+        setattr(package, field, value)
+        config.packages[package_key] = package
+        save_config()
+    except Exception as exc:
+        return await editMessage(call, f"❌ 更新失败：{exc}", buttons=_package_edit_buttons(package_key))
+    await package_edit(_, call)
+
+
+@bot.on_callback_query(filters.regex(r"^package_default:") & admins_on_filter)
+async def package_default(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    package_key = call.data.split(":", 1)[1]
+    if package_key not in (config.packages or {}):
+        return await editMessage(call, "❌ 未找到套餐。", buttons=_package_panel_buttons())
+    config.default_package = package_key
+    save_config()
+    await editMessage(call, f"✅ 已设置默认套餐为 `{package_key}`。", buttons=_package_edit_buttons(package_key))
+
+
+@bot.on_callback_query(filters.regex(r"^package_delete:") & admins_on_filter)
+async def package_delete(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    package_key = call.data.split(":", 1)[1]
+    if not config.packages or package_key not in config.packages:
+        return await editMessage(call, "❌ 未找到套餐。", buttons=_package_panel_buttons())
+    if config.default_package == package_key:
+        return await editMessage(call, "⚠️ 默认套餐不能删除。", buttons=_package_edit_buttons(package_key))
+    del config.packages[package_key]
+    save_config()
+    await editMessage(call, f"✅ 已删除套餐 `{package_key}`。", buttons=_package_panel_buttons())

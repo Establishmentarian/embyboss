@@ -360,11 +360,20 @@ def config_preparation() -> InlineKeyboardMarkup:
          [(f'设置赠送资格天数({config.kk_gift_days}天)', 'set_kk_gift_days'), (f'设置活跃检测天数({config.activity_check_days}天)', 'set_activity_check_days')],
          [(f'设置封存账号天数({config.freeze_days}天)', 'set_freeze_days')],
          [(f'设置签到权限({checkin_lv_text})', 'set_checkin_lv')],
+         [('🔐 权限管理', 'perm_panel'), ('👥 管理员列表', 'admin_list')],
+         [('📦 套餐管理', 'package_panel'), ('🧩 配置编辑器', 'set_config_any')],
          [('🔙 返回', 'manage')]])
     return keyboard
 
 
 back_config_p_ikb = ikb([[("🎮  ️返回主控", "back_config")]])
+
+
+def perm_panel_ikb() -> InlineKeyboardMarkup:
+    return ikb([
+        [("👥 设置次级管理员", "set_operators"), ("🔐 设置权限", "set_permissions")],
+        [("🔙 返回", "back_config")],
+    ])
 
 
 def back_set_ikb(method) -> InlineKeyboardMarkup:

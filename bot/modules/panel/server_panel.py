@@ -4,9 +4,10 @@
 """
 from datetime import datetime, timezone, timedelta
 from pyrogram import filters
-from bot import bot, emby_line, emby_whitelist_line
+from bot import bot
 from bot.func_helper.emby import emby
 from bot.func_helper.filters import user_in_group_on_filter
+from bot.func_helper.package_utils import get_line_for_user, get_package_key_by_level
 from bot.sql_helper.sql_emby import sql_get_emby
 from bot.func_helper.fix_bottons import cr_page_server
 from bot.func_helper.msg_utils import callAnswer, editMessage
@@ -33,17 +34,12 @@ async def server(_, call):
         server_info = ''.join([item['server'] for item in sever if item['id'] == j])
 
     pwd = '空' if not data.pwd else data.pwd
-    line = ''
-    if data.lv == 'b':
-        line = f'{emby_line}'
-    elif data.lv == 'a':
-        line = f'{emby_line}'
-        if emby_whitelist_line:
-            line += f'\n{emby_whitelist_line}'
-    else:
-        line = ' - **无权查看**'
+    line = ' - **无权查看**'
+    if data.lv in {'a', 'b'}:
+        line = get_line_for_user(data)
     try:
-        online = await emby.get_current_playing_count()
+        package_key = get_package_key_by_level(data.lv)
+        online = await emby.get_current_playing_count(package_key=package_key)
         if online == -1:
             online = 'Emby服务器断连 ·0'
     except Exception:

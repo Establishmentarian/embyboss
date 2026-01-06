@@ -9,6 +9,7 @@ from pyrogram import filters
 
 from bot.func_helper.emby import Embyservice
 from bot.func_helper.utils import judge_admins, members_info, open_check
+from bot.func_helper.package_utils import get_package_key_by_level
 from bot.modules.commands.exchange import rgs_code
 from bot.sql_helper.sql_emby import sql_add_emby
 from bot.func_helper.filters import user_in_group_filter, user_in_group_on_filter
@@ -69,7 +70,8 @@ async def p_start(_, msg):
         data = await members_info(tg=msg.from_user.id)
         is_admin = judge_admins(msg.from_user.id)
         if not data:
-            sql_add_emby(msg.from_user.id)
+            package_key = get_package_key_by_level("d")
+            sql_add_emby(msg.from_user.id, package_key=package_key)
             await asyncio.gather(deleteMessage(msg),
                                  sendPhoto(msg, bot_photo,
                                            f"**✨ 只有你想见我的时候我们的相遇才有意义**\n\n"
