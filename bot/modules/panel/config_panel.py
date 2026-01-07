@@ -4,6 +4,9 @@
 部分目前有 导出日志，更改探针，更改emby线路，设置购买按钮
 
 """
+import re
+
+import bot as bot_module
 from bot import bot, prefixes, bot_photo, Now, LOGGER, config, save_config, auto_update, moviepilot, sakura_b, reload_packages, packages
 from pyrogram import filters
 
@@ -122,6 +125,18 @@ async def _ensure_perm(call, perm: str):
     return True
 
 
+def _parse_reward_range(text: str):
+    parts = [item for item in re.split(r"[\\s,，]+", text.strip()) if item]
+    if len(parts) != 2:
+        return None
+    try:
+        values = [int(item) for item in parts]
+    except ValueError:
+        return None
+    low, high = min(values), max(values)
+    return [low, high]
+
+
 @bot.on_message(filters.command('config', prefixes=prefixes) & admins_on_filter)
 async def config_p_set(_, msg):
     if not has_permission(msg.from_user.id, "config_basic"):
@@ -130,7 +145,7 @@ async def config_p_set(_, msg):
     package_key, buttons = select_package(prefix="panel:back_config", back_callback="back_start")
     if package_key is None:
         return await sendPhoto(msg, photo=bot_photo, caption="📦 请选择要配置的套餐：", buttons=buttons)
-    await sendPhoto(msg, photo=bot_photo, caption="🌸 欢迎回来！\n\n👇点击你要修改的内容。",
+    await sendPhoto(msg, photo=bot_photo, caption="🌸 欢迎回来！\n\n👇点击你要修改的内容（推荐使用图形化配置）。",
                     buttons=config_preparation(package_key))
 
 
@@ -146,7 +161,7 @@ async def config_p_re(_, call):
         if package_key is None:
             await callAnswer(call, "📦 请选择套餐", True)
             return await editMessage(call, "📦 请选择要配置的套餐：", buttons=buttons)
-    await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容。", buttons=config_preparation(package_key))
+    await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容（推荐使用图形化配置）。", buttons=config_preparation(package_key))
 
 
 @bot.on_callback_query(filters.regex("log_out") & admins_on_filter)
@@ -480,7 +495,7 @@ async def open_leave_ban(_, call):
         log_message = "【admin】：管理员 {} 已调整 退群封禁设置为 False".format(call.from_user.first_name)
 
     await callAnswer(call, message, True)
-    await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容。", buttons=config_preparation(package_key))
+    await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容（推荐使用图形化配置）。", buttons=config_preparation(package_key))
     save_config()
     LOGGER.info(log_message)
 
@@ -500,9 +515,132 @@ async def set_user_playrank(_, call):
         log_message = f"【admin】：管理员 {call.from_user.first_name} 已启用 观影榜结算"
 
     await callAnswer(call, message, True)
-    await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容。", buttons=config_preparation(package_key))
+    await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容（推荐使用图形化配置）。", buttons=config_preparation(package_key))
     save_config()
     LOGGER.info(log_message)
+
+
+@bot.on_callback_query(filters.regex('^panel:toggle_open:') & admins_on_filter)
+async def toggle_open_setting(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
+    parts = call.data.split(":")
+    field = parts[2] if len(parts) > 2 else None
+    package_key = resolve_package_key(parts[3]) if len(parts) > 3 else resolve_package_key(None)
+    if field not in {"checkin", "exchange", "whitelist", "invite"}:
+        await callAnswer(call, "❌ 未知配置项", True)
+        return
+    current = bool(get_package_open_value(package_key, field))
+    set_package_open_value(package_key, field, not current)
+    save_config()
+    await config_p_re(_, call)
+
+
+@bot.on_callback_query(filters.regex('^set_money_name$') & admins_on_filter)
+async def set_money_name(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
+    await callAnswer(call, '💰 设置积分名称')
+    send = await editMessage(call,
+                             f"💰【设置积分名称】\n\n请输入新的积分名称\n取消点击 /cancel\n\n当前积分名称: {config.money}")
+    if send is False:
+        return
+    txt = await callListen(call, 120, back_set_ikb('set_money_name'))
+    if txt is False:
+        return
+    if txt.text == '/cancel':
+        await txt.delete()
+        await editMessage(call, '__您已经取消输入__ **会话已结束！**', buttons=back_set_ikb('set_money_name'))
+        return
+    await txt.delete()
+    name = txt.text.strip()
+    if not name:
+        await editMessage(call, "❌ 积分名称不能为空。", buttons=back_set_ikb('set_money_name'))
+        return
+    config.money = name
+    bot_module.sakura_b = name
+    save_config()
+    await editMessage(call, f"✅ 积分名称已更新为 {config.money}", buttons=back_config_p_ikb)
+
+
+@bot.on_callback_query(filters.regex('^panel:set_open_value:') & admins_on_filter)
+async def set_open_value(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
+    parts = call.data.split(":")
+    field = parts[2] if len(parts) > 2 else None
+    package_key = resolve_package_key(parts[3]) if len(parts) > 3 else resolve_package_key(None)
+    labels = {
+        "exchange_cost": "自动续期兑换消耗",
+        "whitelist_cost": "兑换白名单消耗",
+        "invite_cost": "兑换邀请码消耗",
+    }
+    if field not in labels:
+        await callAnswer(call, "❌ 未知配置项", True)
+        return
+    current = get_package_open_value(package_key, field) or 0
+    await callAnswer(call, f"🧮 设置{labels[field]}")
+    prompt = (
+        f"🧮【设置{labels[field]}】\n\n"
+        f"请输入一个数字\n取消点击 /cancel\n\n"
+        f"当前数值: {current} {config.money}"
+    )
+    send = await editMessage(call, prompt)
+    if send is False:
+        return
+    txt = await callListen(call, 120, back_set_ikb(f'panel:set_open_value:{field}', package_key))
+    if txt is False:
+        return
+    if txt.text == '/cancel':
+        await txt.delete()
+        await editMessage(call, '__您已经取消输入__ **会话已结束！**',
+                          buttons=back_set_ikb(f'panel:set_open_value:{field}', package_key))
+        return
+    await txt.delete()
+    try:
+        value = int(txt.text)
+    except ValueError:
+        await editMessage(call, f"请注意格式! 您的输入如下: \n\n`{txt.text}`",
+                          buttons=back_set_ikb(f'panel:set_open_value:{field}', package_key))
+        return
+    set_package_open_value(package_key, field, value)
+    save_config()
+    await editMessage(call, f"✅ {labels[field]} 已更新为 {value} {config.money}",
+                      buttons=back_config_p_ikb_with_package(package_key))
+
+
+@bot.on_callback_query(filters.regex('^panel:set_checkin_reward') & admins_on_filter)
+async def set_checkin_reward(_, call):
+    if not await _ensure_perm(call, "config_basic"):
+        return
+    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else resolve_package_key(None)
+    current = get_package_open_value(package_key, "checkin_reward") or [1, 10]
+    await callAnswer(call, "🎯 设置签到奖励")
+    send = await editMessage(call,
+                             "🎯【设置签到奖励】\n\n"
+                             "请输入奖励区间（例如：1 10）\n"
+                             "取消点击 /cancel\n\n"
+                             f"当前奖励区间: {current[0]}~{current[1]} {config.money}")
+    if send is False:
+        return
+    txt = await callListen(call, 120, back_set_ikb('panel:set_checkin_reward', package_key))
+    if txt is False:
+        return
+    if txt.text == '/cancel':
+        await txt.delete()
+        await editMessage(call, '__您已经取消输入__ **会话已结束！**',
+                          buttons=back_set_ikb('panel:set_checkin_reward', package_key))
+        return
+    await txt.delete()
+    reward_range = _parse_reward_range(txt.text)
+    if not reward_range:
+        await editMessage(call, f"请注意格式! 您的输入如下: \n\n`{txt.text}`",
+                          buttons=back_set_ikb('panel:set_checkin_reward', package_key))
+        return
+    set_package_open_value(package_key, "checkin_reward", reward_range)
+    save_config()
+    await editMessage(call, f"✅ 签到奖励区间已更新为 {reward_range[0]}~{reward_range[1]} {config.money}",
+                      buttons=back_config_p_ikb_with_package(package_key))
 
 
 @bot.on_callback_query(filters.regex('set_kk_gift_days') & admins_on_filter)
