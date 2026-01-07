@@ -6,7 +6,7 @@ import asyncio
 
 from pyrogram import filters
 
-from bot import bot, _open, save_config, bot_photo, LOGGER, bot_name, admins, owner, config, default_package
+from bot import bot, save_config, bot_photo, LOGGER, bot_name, admins, owner, config, default_package
 from bot.func_helper.filters import staff_on_filter
 from bot.schemas import ExDate
 from bot.sql_helper.sql_code import sql_count_code, sql_count_p_code, sql_delete_all_unused, sql_delete_unused_by_days
@@ -16,7 +16,12 @@ from bot.func_helper.fix_bottons import gm_ikb_content, open_menu_ikb, gog_reste
 from bot.func_helper.msg_utils import callAnswer, editMessage, sendPhoto, callListen, deleteMessage, sendMessage
 from bot.func_helper.utils import open_check, cr_link_one, rn_link_one
 from bot.func_helper.permissions import has_permission
-from bot.func_helper.package_utils import select_package, resolve_package_key
+from bot.func_helper.package_utils import (
+    get_package_open_value,
+    resolve_package_key,
+    select_package,
+    set_package_open_value,
+)
 
 
 async def _require_perm(call, perm: str) -> bool:
@@ -91,10 +96,10 @@ async def _render_manage_panel(call, package_key: str):
     if not await _require_perm(call, "view_users"):
         return
     await callAnswer(call, f'✔️ manage面板 - {package_key}')
-    stat, all_user, tem, timing = await open_check()
+    stat, all_user, tem, timing = await open_check(package_key)
     stat = "True" if stat else "False"
     timing = 'Turn off' if timing == 0 else str(timing) + ' min'
-    tg, emby, white = sql_count_emby()
+    tg, emby, white = sql_count_emby(package_key)
     gm_text = f'⚙️ 欢迎您，亲爱的管理员 {call.from_user.first_name}\n\n' \
               f'· ®️ 注册状态 | **{stat}**\n' \
               f'· ⏳ 定时注册 | **{timing}**\n' \
@@ -130,15 +135,15 @@ async def open_menu(_, call):
         return
     await callAnswer(call, '®️ register面板')
     # [开关，注册总数，定时注册] 此间只对emby表中tg用户进行统计
-    stat, all_user, tem, timing = await open_check()
-    tg, emby, white = sql_count_emby()
+    stat, all_user, tem, timing = await open_check(package_key)
+    tg, emby, white = sql_count_emby(package_key)
     openstats = '✅' if stat else '❎'  # 三元运算
     timingstats = '❎' if timing == 0 else '✅'
     text = f'⚙ **注册状态设置**：\n\n- 自由注册即定量方式，定时注册既定时又定量，将自动转发消息至群组，再次点击按钮可提前结束并报告。\n' \
            f'- **注册总人数限制 {all_user}**'
     await editMessage(call, text, buttons=open_menu_ikb(openstats, timingstats, package_key))
     if tem != emby:
-        _open.tem = emby
+        set_package_open_value(package_key, "open_tem", emby)
         save_config()
 
 
@@ -149,13 +154,13 @@ async def open_stats(_, call):
     package_key = await _select_panel_package(call, "注册状态", "panel:open_stat")
     if not package_key:
         return
-    stat, all_user, tem, timing = await open_check()
+    stat, all_user, tem, timing = await open_check(package_key)
     if timing != 0:
         return await callAnswer(call, "🔴 目前正在运行定时注册。\n无法调用，请再次点击，【定时注册】关闭状态", True)
 
-    tg, emby, white = sql_count_emby()
+    tg, emby, white = sql_count_emby(package_key)
     if stat:
-        _open.stat = False
+        set_package_open_value(package_key, "open_stat", False)
         save_config()
         await callAnswer(call, "🟢【自由注册】\n\n已结束", True)
         sur = all_user - tem
@@ -167,7 +172,7 @@ async def open_stats(_, call):
         # await open_menu(_, call)
         LOGGER.info(f"【admin】：管理员 {call.from_user.first_name} 关闭了自由注册")
     elif not stat:
-        _open.stat = True
+        set_package_open_value(package_key, "open_stat", True)
         save_config()
         await callAnswer(call, "🟡【自由注册】\n\n已开启", True)
         sur = all_user - tem  # for i in group可以多个群组用，但是现在不做
@@ -191,7 +196,7 @@ async def open_timing(_, call):
     if not package_key:
         return
     global change_for_timing_task
-    if _open.timing == 0:
+    if get_package_open_value(package_key, "open_timing") == 0:
         await callAnswer(call, '⭕ 定时设置')
         await editMessage(call,
                           "🦄【定时注册】 \n\n- 请在 120s 内发送 [定时时长] [总人数]\n"
@@ -209,35 +214,38 @@ async def open_timing(_, call):
 
         try:
             new_timing, new_all_user = txt.text.split()
-            _open.timing = int(new_timing)
-            _open.all_user = int(new_all_user)
-            _open.stat = True
+            set_package_open_value(package_key, "open_timing", int(new_timing))
+            set_package_open_value(package_key, "open_all_user", int(new_all_user))
+            set_package_open_value(package_key, "open_stat", True)
             save_config()
         except ValueError:
             await editMessage(call, "🚫 请检查数字填写是否正确。\n`[时长min] [总人数]`", buttons=back_open_menu_ikb(package_key))
         else:
-            tg, emby, white = sql_count_emby()
-            sur = _open.all_user - emby
+            tg, emby, white = sql_count_emby(package_key)
+            all_user = get_package_open_value(package_key, "open_all_user")
+            timing = get_package_open_value(package_key, "open_timing")
+            sur = all_user - emby
             await asyncio.gather(sendPhoto(call, photo=bot_photo,
                                            caption=f'🫧 管理员 {call.from_user.first_name} 已开启 **定时注册**\n\n'
-                                                   f'⏳ 可持续时间 | **{_open.timing}** min\n'
-                                                   f'🎫 总注册限制 | {_open.all_user}\n🎟️ 已注册人数 | {emby}\n'
+                                                   f'⏳ 可持续时间 | **{timing}** min\n'
+                                                   f'🎫 总注册限制 | {all_user}\n🎟️ 已注册人数 | {emby}\n'
                                                    f'🎭 剩余可注册 | **{sur}**\n🤖 bot使用人数 | {tg}',
                                            buttons=gog_rester_ikb(), send=True),
                                  editMessage(call,
-                                             f"®️ 好，已设置**定时注册 {_open.timing} min 总限额 {_open.all_user}**",
+                                             f"®️ 好，已设置**定时注册 {timing} min 总限额 {all_user}**",
                                              buttons=back_free_ikb(package_key)))
             LOGGER.info(
-                f"【admin】-定时注册：管理员 {call.from_user.first_name} 开启了定时注册 {_open.timing} min，人数限制 {sur}")
+                f"【admin】-定时注册：管理员 {call.from_user.first_name} 开启了定时注册 {timing} min，人数限制 {sur}")
             # 创建一个异步任务并保存为变量，并给它一个名字
             change_for_timing_task = asyncio.create_task(
-                change_for_timing(_open.timing, call.from_user.id, call), name='change_for_timing')
+                change_for_timing(timing, call.from_user.id, call, package_key),
+                name=f'change_for_timing:{package_key}')
 
     else:
         try:
             # 遍历所有的异步任务，找到'change_for_timing'，取消
             for task in asyncio.all_tasks():
-                if task.get_name() == 'change_for_timing':
+                if task.get_name() == f'change_for_timing:{package_key}':
                     change_for_timing_task = task
                     break
             change_for_timing_task.cancel()
@@ -248,23 +256,25 @@ async def open_timing(_, call):
             await open_menu(_, call)
 
 
-async def change_for_timing(timing, tgid, call):
-    a = _open.tem
+async def change_for_timing(timing, tgid, call, package_key: str):
+    a = get_package_open_value(package_key, "open_tem") or 0
     timing = timing * 60
     try:
         await asyncio.sleep(timing)
     except asyncio.CancelledError:
         pass
     finally:
-        _open.timing = 0
-        _open.stat = False
+        set_package_open_value(package_key, "open_timing", 0)
+        set_package_open_value(package_key, "open_stat", False)
         save_config()
-        b = _open.tem - a
-        s = _open.all_user - _open.tem
-        text = f'⏳** 注册结束**：\n\n🍉 目前席位：{_open.tem}\n🥝 新增席位：{b}\n🍋 剩余席位：{s}'
+        tem = get_package_open_value(package_key, "open_tem") or 0
+        all_user = get_package_open_value(package_key, "open_all_user") or 0
+        b = tem - a
+        s = all_user - tem
+        text = f'⏳** 注册结束**：\n\n🍉 目前席位：{tem}\n🥝 新增席位：{b}\n🍋 剩余席位：{s}'
         send = await sendPhoto(call, photo=bot_photo, caption=text, timer=300, send=True)
         send1 = await send.forward(tgid)
-        LOGGER.info(f'【admin】-定时注册：运行结束，本次注册 目前席位：{_open.tem}  新增席位:{b}  剩余席位：{s}')
+        LOGGER.info(f'【admin】-定时注册：运行结束，本次注册 目前席位：{tem}  新增席位:{b}  剩余席位：{s}')
         await deleteMessage(send1, 30)
 
 
@@ -294,7 +304,7 @@ async def open_all_user_l(_, call):
     except ValueError:
         await editMessage(call, f"❌ 八嘎，请输入一个数字给我。", buttons=back_free_ikb(package_key))
     else:
-        _open.all_user = a
+        set_package_open_value(package_key, "open_all_user", a)
         save_config()
         await editMessage(call, f"✔️ 成功，您已设置 **注册总人数 {a}**", buttons=back_free_ikb(package_key))
         LOGGER.info(f"【admin】：管理员 {call.from_user.first_name} 调整了总人数限制：{a}")
@@ -325,7 +335,7 @@ async def open_us(_, call):
     except ValueError:
         await editMessage(call, f"❌ 八嘎，请输入一个数字给我。", buttons=back_free_ikb(package_key))
     else:
-        _open.open_us = a
+        set_package_open_value(package_key, "open_us", a)
         save_config()
         await editMessage(call, f"✔️ 成功，您已设置 **开放注册时账号的有效天数 {a}**", buttons=back_free_ikb(package_key))
         LOGGER.info(f"【admin】：管理员 {call.from_user.first_name} 调整了开放注册时账号的有效天数：{a}")
@@ -469,7 +479,8 @@ async def set_renew(_, call):
     method = parts[2] if len(parts) >= 4 else None
     try:
         if method:
-            setattr(_open, method, not getattr(_open, method))
+            current = get_package_open_value(package_key, method)
+            set_package_open_value(package_key, method, not current)
             save_config()
     except IndexError:
         pass
@@ -519,14 +530,15 @@ async def invite_lv_set(_, call):
         if len(parts) >= 4:
             level = parts[2]
             if level in ['a', 'b', 'c', 'd']:
-                _open.invite_lv = level
+                set_package_open_value(package_key, "invite_lv", level)
                 save_config()
                 await callAnswer(call, f'✅ 已设置邀请等级为 {level}', show_alert=True)
         await callAnswer(call, '🚀 进入邀请等级设置')
         # 当点击设置邀请等级按钮时
+        invite_lv = get_package_open_value(package_key, "invite_lv")
         await editMessage(call, 
             "请选择邀请等级:\n\n"
-            f"当前等级: {_open.invite_lv}\n\n"
+            f"当前等级: {invite_lv}\n\n"
             "🅰️ - 白名单可使用\n"
             "🅱️ - 普通用户及以上可使用\n" 
             "©️ - 已禁用用户及以上可使用\n"
@@ -549,14 +561,15 @@ async def checkin_lv_set(_, call):
         if len(parts) >= 4:
             level = parts[2]
             if level in ['a', 'b', 'c', 'd']:
-                _open.checkin_lv = level
+                set_package_open_value(package_key, "checkin_lv", level)
                 save_config()
                 await callAnswer(call, f'✅ 已设置签到等级为 {level}', show_alert=True)
         await callAnswer(call, '🚀 进入签到等级设置')
         # 当点击设置签到等级按钮时
+        checkin_lv = get_package_open_value(package_key, "checkin_lv")
         await editMessage(call, 
             "请选择签到等级:\n\n"
-            f"当前等级: {_open.checkin_lv}\n\n"
+            f"当前等级: {checkin_lv}\n\n"
             "🅰️ - 白名单可签到\n"
             "🅱️ - 普通用户及以上可签到\n" 
             "©️ - 已禁用用户及以上可签到\n"

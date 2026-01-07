@@ -1,6 +1,7 @@
 import pytz
 
-from bot import bot, _open, save_config, owner, admins, bot_name, ranks, schedall, group, config
+from bot import bot, save_config, owner, admins, bot_name, ranks, schedall, group, config
+from bot.func_helper.package_utils import get_package_open_value, resolve_package_key, set_package_open_value
 from bot.sql_helper.sql_code import sql_add_code
 from bot.sql_helper.sql_emby import sql_get_emby
 from cacheout import Cache
@@ -51,27 +52,35 @@ async def members_info(tg=None, name=None):
         return name, lv, ex, iv, embyid, pwd2
 
 
-async def open_check():
+async def open_check(package_key: str = None):
     """
     对config查询open
     :return: open_stats, all_user, tem, timing
     """
-    open_stats = _open.stat
-    all_user = _open.all_user
-    tem = _open.tem
-    timing = _open.timing
+    package_key = resolve_package_key(package_key)
+    open_stats = get_package_open_value(package_key, "open_stat")
+    all_user = get_package_open_value(package_key, "open_all_user")
+    tem = get_package_open_value(package_key, "open_tem")
+    timing = get_package_open_value(package_key, "open_timing")
     return open_stats, all_user, tem, timing
 
 
-def tem_adduser():
-    _open.tem = _open.tem + 1
-    if _open.tem >= _open.all_user:
-        _open.stat = False
+def tem_adduser(package_key: str = None):
+    package_key = resolve_package_key(package_key)
+    tem = get_package_open_value(package_key, "open_tem") or 0
+    all_user = get_package_open_value(package_key, "open_all_user") or 0
+    tem += 1
+    set_package_open_value(package_key, "open_tem", tem)
+    if all_user and tem >= all_user:
+        set_package_open_value(package_key, "open_stat", False)
     save_config()
 
 
-def tem_deluser():
-    _open.tem = _open.tem - 1
+def tem_deluser(package_key: str = None):
+    package_key = resolve_package_key(package_key)
+    tem = get_package_open_value(package_key, "open_tem") or 0
+    tem = max(0, tem - 1)
+    set_package_open_value(package_key, "open_tem", tem)
     save_config()
 
 

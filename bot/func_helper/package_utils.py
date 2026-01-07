@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 
 from pyromod.helpers import ikb
 
-from bot import default_package, package_by_level, packages
+from bot import default_package, package_by_level, packages, _open
 from bot.sql_helper import reset_db_package, set_db_package
 
 
@@ -15,6 +15,48 @@ def get_package_config(package_key: str):
     if package_key in packages:
         return packages[package_key]
     return packages[default_package]
+
+_OPEN_FIELD_MAP = {
+    "open_stat": "stat",
+    "open_us": "open_us",
+    "open_all_user": "all_user",
+    "open_timing": "timing",
+    "open_tem": "tem",
+    "checkin": "checkin",
+    "checkin_lv": "checkin_lv",
+    "exchange": "exchange",
+    "whitelist": "whitelist",
+    "invite": "invite",
+    "invite_lv": "invite_lv",
+    "leave_ban": "leave_ban",
+    "uplays": "uplays",
+    "checkin_reward": "checkin_reward",
+    "exchange_cost": "exchange_cost",
+    "whitelist_cost": "whitelist_cost",
+    "invite_cost": "invite_cost",
+}
+
+
+def get_package_open_value(package_key: str, field: str):
+    package = get_package_config(package_key)
+    if hasattr(package, field):
+        value = getattr(package, field)
+        if value is not None:
+            return value
+    fallback = _OPEN_FIELD_MAP.get(field)
+    if fallback and hasattr(_open, fallback):
+        return getattr(_open, fallback)
+    return None
+
+
+def set_package_open_value(package_key: str, field: str, value):
+    package = get_package_config(package_key)
+    if hasattr(package, field):
+        setattr(package, field, value)
+        return
+    fallback = _OPEN_FIELD_MAP.get(field)
+    if fallback and hasattr(_open, fallback):
+        setattr(_open, fallback, value)
 
 
 def get_line_for_level(lv: str) -> str:

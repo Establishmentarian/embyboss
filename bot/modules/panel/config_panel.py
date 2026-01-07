@@ -4,7 +4,7 @@
 部分目前有 导出日志，更改探针，更改emby线路，设置购买按钮
 
 """
-from bot import bot, prefixes, bot_photo, Now, LOGGER, config, save_config, _open, auto_update, moviepilot, sakura_b, reload_packages
+from bot import bot, prefixes, bot_photo, Now, LOGGER, config, save_config, auto_update, moviepilot, sakura_b, reload_packages, packages
 from pyrogram import filters
 
 from bot.func_helper.filters import admins_on_filter
@@ -13,7 +13,12 @@ from bot.func_helper.msg_utils import deleteMessage, editMessage, callAnswer, ca
 from bot.func_helper.scheduler import scheduler
 from bot.scheduler.sync_mp_download import sync_download_tasks
 from bot.func_helper.permissions import has_permission, get_user_role
-from bot.func_helper.package_utils import select_package, resolve_package_key
+from bot.func_helper.package_utils import (
+    get_package_open_value,
+    resolve_package_key,
+    select_package,
+    set_package_open_value,
+)
 from bot.func_helper.utils import get_users
 from bot.schemas import EmbyPackage
 import json
@@ -201,7 +206,7 @@ async def set_emby_line(_, call):
     if not await _ensure_perm(call, "config_advanced"):
         return
     await callAnswer(call, '📌 设置emby线路')
-    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else None
+    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else resolve_package_key(None)
     send = await editMessage(call,
                              "💘【设置线路】\n\n对我发送向emby用户展示的emby地址吧\n取消点击 /cancel")
     if send is False:
@@ -216,18 +221,22 @@ async def set_emby_line(_, call):
         await editMessage(call, '__您已经取消输入__ **会话已结束！**', buttons=back_set_ikb('set_line', package_key))
     else:
         await txt.delete()
-        config.emby_line = txt.text
+        package = packages[package_key]
+        package.emby_line = txt.text
+        config.packages = config.packages or {}
+        config.packages[package_key] = package
         save_config()
-        await editMessage(call, f"**【网址样式】:** \n\n{config.emby_line}\n\n设置完成！done！",
+        reload_packages()
+        await editMessage(call, f"**【网址样式】:** \n\n{package.emby_line}\n\n设置完成！done！",
                           buttons=back_config_p_ikb_with_package(package_key) if package_key else back_config_p_ikb)
-        LOGGER.info(f"【admin】：{call.from_user.id} - 更新emby线路为{config.emby_line}设置完成")
+        LOGGER.info(f"【admin】：{call.from_user.id} - 更新emby线路为{package.emby_line}设置完成")
 
 @bot.on_callback_query(filters.regex('^set_whitelist_line') & admins_on_filter)
 async def set_whitelist_emby_line(_, call):
     if not await _ensure_perm(call, "config_advanced"):
         return
     await callAnswer(call, '🌟 设置白名单线路')
-    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else None
+    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else resolve_package_key(None)
     send = await editMessage(call,
                              "🌟【设置白名单线路】\n\n对我发送白名单用户专属的emby地址\n取消点击 /cancel")
     if send is False:
@@ -242,11 +251,15 @@ async def set_whitelist_emby_line(_, call):
         await editMessage(call, '__您已经取消输入__ **会话已结束！**', buttons=back_set_ikb('set_whitelist_line', package_key))
     else:
         await txt.delete()
-        config.emby_whitelist_line = txt.text
+        package = packages[package_key]
+        package.emby_whitelist_line = txt.text
+        config.packages = config.packages or {}
+        config.packages[package_key] = package
         save_config()
-        await editMessage(call, f"**【白名单线路】:** \n\n{config.emby_whitelist_line}\n\n设置完成！done！",
+        reload_packages()
+        await editMessage(call, f"**【白名单线路】:** \n\n{package.emby_whitelist_line}\n\n设置完成！done！",
                           buttons=back_config_p_ikb_with_package(package_key) if package_key else back_config_p_ikb)
-        LOGGER.info(f"【admin】：{call.from_user.id} - 更新白名单线路为{config.emby_whitelist_line}设置完成")
+        LOGGER.info(f"【admin】：{call.from_user.id} - 更新白名单线路为{package.emby_whitelist_line}设置完成")
 
 # 设置需要显示/隐藏的库
 @bot.on_callback_query(filters.regex('set_block') & admins_on_filter)
@@ -455,9 +468,11 @@ async def open_leave_ban(_, call):
     if not await _ensure_perm(call, "config_basic"):
         return
     # 切换状态
-    _open.leave_ban = not _open.leave_ban
+    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else resolve_package_key(None)
+    current = get_package_open_value(package_key, "leave_ban")
+    set_package_open_value(package_key, "leave_ban", not current)
     # 根据当前状态发送消息
-    if _open.leave_ban:
+    if get_package_open_value(package_key, "leave_ban"):
         message = '**👮🏻‍♂️ 您已开启 退群封禁，用户退群bot将会被封印，禁止入群**'
         log_message = "【admin】：管理员 {} 已调整 退群封禁设置为 True".format(call.from_user.first_name)
     else:
@@ -465,7 +480,7 @@ async def open_leave_ban(_, call):
         log_message = "【admin】：管理员 {} 已调整 退群封禁设置为 False".format(call.from_user.first_name)
 
     await callAnswer(call, message, True)
-    await config_p_re(_, call)
+    await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容。", buttons=config_preparation(package_key))
     save_config()
     LOGGER.info(log_message)
 
@@ -474,8 +489,10 @@ async def open_leave_ban(_, call):
 async def set_user_playrank(_, call):
     if not await _ensure_perm(call, "config_basic"):
         return
-    _open.uplays = not _open.uplays
-    if not _open.uplays:
+    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else resolve_package_key(None)
+    current = get_package_open_value(package_key, "uplays")
+    set_package_open_value(package_key, "uplays", not current)
+    if not get_package_open_value(package_key, "uplays"):
         message = '👮🏻‍♂️ 您已关闭 观影榜结算，自动召唤观影榜将不被计算积分'
         log_message = f"【admin】：管理员 {call.from_user.first_name} 已关闭 观影榜结算"
     else:
@@ -483,7 +500,7 @@ async def set_user_playrank(_, call):
         log_message = f"【admin】：管理员 {call.from_user.first_name} 已启用 观影榜结算"
 
     await callAnswer(call, message, True)
-    await config_p_re(_, call)
+    await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容。", buttons=config_preparation(package_key))
     save_config()
     LOGGER.info(log_message)
 

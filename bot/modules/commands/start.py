@@ -9,9 +9,9 @@ from pyrogram import filters
 
 from bot.func_helper.emby import Embyservice
 from bot.func_helper.utils import judge_admins, members_info, open_check
-from bot.func_helper.package_utils import get_package_key_by_level
+from bot.func_helper.package_utils import get_package_key_by_level, get_package_key_for_user_record
 from bot.modules.commands.exchange import rgs_code
-from bot.sql_helper.sql_emby import sql_add_emby
+from bot.sql_helper.sql_emby import sql_add_emby, sql_get_emby
 from bot.func_helper.filters import user_in_group_filter, user_in_group_on_filter
 from bot.func_helper.msg_utils import deleteMessage, sendMessage, sendPhoto, callAnswer, editMessage
 from bot.func_helper.fix_bottons import group_f, judge_start_ikb, judge_group_ikb, cr_kk_ikb
@@ -80,7 +80,9 @@ async def p_start(_, msg):
                                            f"请点击 /start 重新召唤面板"))
             return
         name, lv, ex, us, embyid, pwd2 = data
-        stat, all_user, tem, timing = await open_check()
+        user_record = sql_get_emby(msg.from_user.id)
+        package_key = get_package_key_for_user_record(user_record) if user_record else get_package_key_by_level("b")
+        stat, all_user, tem, timing = await open_check(package_key)
         text = f"▎__欢迎进入用户面板！{msg.from_user.first_name}__\n\n" \
                f"**· 🆔 用户のID** | `{msg.from_user.id}`\n" \
                f"**· 📊 当前状态** | {lv}\n" \
@@ -90,12 +92,12 @@ async def p_start(_, msg):
                f"**· 🎟️ 可注册席位** | {all_user - tem}\n"
         if not embyid:
             await asyncio.gather(deleteMessage(msg),
-                                 sendPhoto(msg, bot_photo, caption=text, buttons=judge_start_ikb(is_admin, False)))
+                                 sendPhoto(msg, bot_photo, caption=text, buttons=judge_start_ikb(is_admin, False, package_key)))
         else:
             await asyncio.gather(deleteMessage(msg),
                                  sendPhoto(msg, bot_photo,
                                            f"**✨ 只有你想见我的时候我们的相遇才有意义**\n\n🍉__你好鸭 [{msg.from_user.first_name}](tg://user?id={msg.from_user.id}) 请选择功能__👇",
-                                           buttons=judge_start_ikb(is_admin, True)))
+                                           buttons=judge_start_ikb(is_admin, True, package_key)))
 
 
 # 返回面板
@@ -103,10 +105,12 @@ async def p_start(_, msg):
 async def b_start(_, call):
     if await user_in_group_filter(_, call):
         is_admin = judge_admins(call.from_user.id)
+        user_record = sql_get_emby(call.from_user.id)
+        package_key = get_package_key_for_user_record(user_record) if user_record else get_package_key_by_level("b")
         await asyncio.gather(callAnswer(call, "⭐ 返回start"),
                              editMessage(call,
                                          text=f"**✨ 只有你想见我的时候我们的相遇才有意义**\n\n🍉__你好鸭 [{call.from_user.first_name}](tg://user?id={call.from_user.id}) 请选择功能__👇",
-                                         buttons=judge_start_ikb(is_admin, account=True)))
+                                         buttons=judge_start_ikb(is_admin, account=True, package_key=package_key)))
     elif not await user_in_group_filter(_, call):
         await asyncio.gather(callAnswer(call, "⭐ 返回start"),
                              editMessage(call, text='💢 拜托啦！请先点击下面加入我们的群组和频道，然后再 /start 一下好吗？\n\n'

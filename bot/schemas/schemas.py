@@ -116,6 +116,23 @@ class EmbyPackage(BaseModel):
     emby_url: str
     emby_line: str
     emby_whitelist_line: Optional[str] = None
+    open_stat: Optional[bool] = None
+    open_us: Optional[int] = None
+    open_all_user: Optional[int] = None
+    open_timing: Optional[int] = None
+    open_tem: Optional[int] = None
+    checkin: Optional[bool] = None
+    checkin_lv: Optional[str] = None
+    exchange: Optional[bool] = None
+    whitelist: Optional[bool] = None
+    invite: Optional[bool] = None
+    invite_lv: Optional[str] = None
+    leave_ban: Optional[bool] = None
+    uplays: Optional[bool] = None
+    checkin_reward: Optional[List[int]] = None
+    exchange_cost: Optional[int] = None
+    whitelist_cost: Optional[int] = None
+    invite_cost: Optional[int] = None
     db_host: Optional[str] = None
     db_user: Optional[str] = None
     db_pwd: Optional[str] = None
