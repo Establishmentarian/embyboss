@@ -63,14 +63,15 @@ async def urm_user(_, msg):
         return await asyncio.gather(editMessage(reply,
                                                 "🔔 **使用格式：**/urm [emby用户名]，此命令用于删除指定用户名的用户"),
                                     msg.delete())
-    e = sql_get_emby(b)
     stats = None
-    if not e:
-        e2 = sql_get_emby2(name=b)
-        if not e2:
-            return await reply.edit(f"♻️ 没有检索到 {b} 账户，请确认重试或手动检查。")
+    e2 = sql_get_emby2(name=b)
+    if e2:
         e = e2
         stats = 1
+    else:
+        e = sql_get_emby(b)
+        if not e:
+            return await reply.edit(f"♻️ 没有检索到 {b} 账户，请确认重试或手动检查。")
 
     package_key = get_package_key_for_user_record(e)
     if await emby.emby_del(emby_id=e.embyid):
