@@ -6,7 +6,7 @@ import asyncio
 
 from pyrogram import filters
 
-from bot import bot, _open, save_config, bot_photo, LOGGER, bot_name, admins, owner, config
+from bot import bot, _open, save_config, bot_photo, LOGGER, bot_name, admins, owner, config, packages, default_package
 from bot.func_helper.filters import staff_on_filter
 from bot.schemas import ExDate
 from bot.sql_helper.sql_code import sql_count_code, sql_count_p_code, sql_delete_all_unused, sql_delete_unused_by_days
@@ -14,8 +14,9 @@ from bot.sql_helper.sql_emby import sql_count_emby
 from bot.func_helper.fix_bottons import gm_ikb_content, open_menu_ikb, gog_rester_ikb, back_open_menu_ikb, \
     back_free_ikb, re_cr_link_ikb, close_it_ikb, ch_link_ikb, date_ikb, cr_paginate, cr_renew_ikb, invite_lv_ikb, checkin_lv_ikb
 from bot.func_helper.msg_utils import callAnswer, editMessage, sendPhoto, callListen, deleteMessage, sendMessage
-from bot.func_helper.utils import open_check, cr_link_one,rn_link_one
+from bot.func_helper.utils import open_check, cr_link_one, rn_link_one
 from bot.func_helper.permissions import has_permission
+from pyromod.helpers import ikb
 
 
 async def _require_perm(call, perm: str) -> bool:
@@ -23,6 +24,69 @@ async def _require_perm(call, perm: str) -> bool:
         await callAnswer(call, "❌ 权限不足", True)
         return False
     return True
+
+
+def _package_select_buttons(prefix: str):
+    rows = [[(f"📦 {key}", f"{prefix}:{key}")] for key in packages.keys()]
+    rows.append([("🔙 返回", "manage")])
+    return ikb(rows)
+
+
+def _resolve_package_key(package_key: str):
+    if package_key in packages:
+        return package_key
+    return default_package
+
+
+async def _handle_cr_link(call, package_key: str):
+    await callAnswer(call, f'✔️ 创建注册/续期码 - {package_key}')
+    send = await editMessage(call,
+                             f'🎟️ 请回复创建 [天数] [数量] [模式] [续期]\n\n'
+                             f'**天数**：月30，季90，半年180，年365\n'
+                             f'**模式**： link -深链接 | code -码\n'
+                             f'**续期**： F - 注册码，T - 续期码\n'
+                             f'**示例**：`30 1 link T` 记作 30天一条续期深链接\n'
+                             f'__取消本次操作，请 /cancel__')
+    if send is False:
+        return
+
+    content = await callListen(call, 120, buttons=re_cr_link_ikb)
+    if content is False:
+        return
+    elif content.text == '/cancel':
+        await content.delete()
+        return await editMessage(call, '⭕ 您已经取消操作了。', buttons=re_cr_link_ikb)
+    try:
+        await content.delete()
+        times, count, method, renew = content.text.split()
+        count = int(count)
+        days = int(times)
+        if method != 'code' and method != 'link':
+            return editMessage(call, '⭕ 输入的method参数有误', buttons=re_cr_link_ikb)
+    except (ValueError, IndexError):
+        return await editMessage(call, '⚠️ 检查输入，有误。', buttons=re_cr_link_ikb)
+    else:
+        if renew == 'F':
+            links = await cr_link_one(call.from_user.id, times, count, days, method, package_key=package_key)
+            if links is None:
+                return await editMessage(call, '⚠️ 数据库插入失败，请检查数据库。', buttons=re_cr_link_ikb)
+            links = f"🎯 {bot_name}已为您生成了 **{days}天** 注册码 {count} 个\n\n" + links
+            chunks = [links[i:i + 4096] for i in range(0, len(links), 4096)]
+            for chunk in chunks:
+                await sendMessage(content, chunk, buttons=close_it_ikb)
+            await editMessage(call, f'📂 {bot_name}已为 您 生成了 {count} 个 {days} 天注册码', buttons=re_cr_link_ikb)
+            LOGGER.info(f"【admin】：{bot_name}已为 {content.from_user.id} 生成了 {count} 个 {days} 天注册码")
+
+        else:
+            links = await rn_link_one(call.from_user.id, times, count, days, method, package_key=package_key)
+            if links is None:
+                return await editMessage(call, '⚠️ 数据库插入失败，请检查数据库。', buttons=re_cr_link_ikb)
+            links = f"🎯 {bot_name}已为您生成了 **{days}天** 续期码 {count} 个\n\n" + links
+            chunks = [links[i:i + 4096] for i in range(0, len(links), 4096)]
+            for chunk in chunks:
+                await sendMessage(content, chunk, buttons=close_it_ikb)
+            await editMessage(call, f'📂 {bot_name}已为 您 生成了 {count} 个 {days} 天续期码', buttons=re_cr_link_ikb)
+            LOGGER.info(f"【admin】：{bot_name}已为 {content.from_user.id} 生成了 {count} 个 {days} 天续期码")
 
 
 @bot.on_callback_query(filters.regex('manage') & staff_on_filter)
@@ -243,54 +307,18 @@ async def open_us(_, call):
 async def cr_link(_, call):
     if not await _require_perm(call, "manage_codes"):
         return
-    await callAnswer(call, '✔️ 创建注册/续期码')
-    send = await editMessage(call,
-                             f'🎟️ 请回复创建 [天数] [数量] [模式] [续期]\n\n'
-                             f'**天数**：月30，季90，半年180，年365\n'
-                             f'**模式**： link -深链接 | code -码\n'
-                             f'**续期**： F - 注册码，T - 续期码\n'
-                             f'**示例**：`30 1 link T` 记作 30天一条续期深链接\n'
-                             f'__取消本次操作，请 /cancel__')
-    if send is False:
-        return
+    if len(packages) > 1:
+        await callAnswer(call, "📦 请选择套餐", True)
+        return await editMessage(call, "📦 请选择要生成码的套餐：", buttons=_package_select_buttons("cr_link_pkg"))
+    await _handle_cr_link(call, default_package)
 
-    content = await callListen(call, 120, buttons=re_cr_link_ikb)
-    if content is False:
-        return
-    elif content.text == '/cancel':
-        await content.delete()
-        return await editMessage(call, '⭕ 您已经取消操作了。', buttons=re_cr_link_ikb)
-    try:
-        await content.delete()
-        times, count, method, renew = content.text.split()
-        count = int(count)
-        days = int(times)
-        if method != 'code' and method != 'link':
-            return editMessage(call, '⭕ 输入的method参数有误', buttons=re_cr_link_ikb)
-    except (ValueError, IndexError):
-        return await editMessage(call, '⚠️ 检查输入，有误。', buttons=re_cr_link_ikb)
-    else:
-        if renew == 'F':
-            links = await cr_link_one(call.from_user.id, times, count, days, method)
-            if links is None:
-                return await editMessage(call, '⚠️ 数据库插入失败，请检查数据库。', buttons=re_cr_link_ikb)
-            links = f"🎯 {bot_name}已为您生成了 **{days}天** 注册码 {count} 个\n\n" + links
-            chunks = [links[i:i + 4096] for i in range(0, len(links), 4096)]
-            for chunk in chunks:
-                await sendMessage(content, chunk, buttons=close_it_ikb)
-            await editMessage(call, f'📂 {bot_name}已为 您 生成了 {count} 个 {days} 天注册码', buttons=re_cr_link_ikb)
-            LOGGER.info(f"【admin】：{bot_name}已为 {content.from_user.id} 生成了 {count} 个 {days} 天注册码")
 
-        else:
-            links = await rn_link_one(call.from_user.id, times, count, days, method)
-            if links is None:
-                return await editMessage(call, '⚠️ 数据库插入失败，请检查数据库。', buttons=re_cr_link_ikb)
-            links = f"🎯 {bot_name}已为您生成了 **{days}天** 续期码 {count} 个\n\n" + links
-            chunks = [links[i:i + 4096] for i in range(0, len(links), 4096)]
-            for chunk in chunks:
-                await sendMessage(content, chunk, buttons=close_it_ikb)
-            await editMessage(call, f'📂 {bot_name}已为 您 生成了 {count} 个 {days} 天续期码', buttons=re_cr_link_ikb)
-            LOGGER.info(f"【admin】：{bot_name}已为 {content.from_user.id} 生成了 {count} 个 {days} 天续期码")
+@bot.on_callback_query(filters.regex('^cr_link_pkg:') & staff_on_filter)
+async def cr_link_by_package(_, call):
+    if not await _require_perm(call, "manage_codes"):
+        return
+    package_key = _resolve_package_key(call.data.split(":", 1)[1])
+    await _handle_cr_link(call, package_key)
 
 
 # 检索
