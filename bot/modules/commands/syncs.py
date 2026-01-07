@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from asyncio import sleep
 from pyrogram import filters
 from pyrogram.errors import FloodWait
-from bot import bot, prefixes, bot_photo, LOGGER, owner, group, config, default_package
+from bot import bot, prefixes, bot_photo, LOGGER, owner, group, config
 from bot.func_helper.emby import emby
 from bot.func_helper.filters import admins_on_filter
 from bot.func_helper.utils import tem_deluser, split_long_message
@@ -244,13 +244,31 @@ async def clear_deleted_account(_, msg):
                     text += f'{a}. `{d.user.id}` 已注销\n'
             except Exception as e:
                 LOGGER.error(e)
-        await send.delete()
-        n = 1024
-        chunks = [text[i:i + n] for i in range(0, len(text), n)]
-        for c in chunks:
-            await sendMessage(msg, c)
+        package_key = msg.command[2] if len(msg.command) > 2 else None
+    except Exception:
+        confirm_restore = None
+        package_key = None
 
+    packages = config.packages or {}
+    if packages and len(packages) > 1 and not package_key:
+        available = "、".join(packages.keys())
+        return await sendMessage(
+            msg,
+            f'注意: 多套餐模式需要指定套餐。\n可用套餐：{available}\n用法：`/restore_from_db true <套餐名>`',
+        )
 
+    if packages and package_key and package_key not in packages:
+        return await sendMessage(msg, f'未找到套餐 `{package_key}`，请检查输入。')
+
+        package_key = package_key or config.default_package
+        embyusers = get_all_emby(Emby.embyid is not None and Emby.embyid != '', package_key=package_key)
+                    data = await emby.emby_create(name=embyuser.name, days=embyuser.us, package_key=package_key)
+                        sql_update_emby(Emby.tg == tg, embyid=embyid, pwd=pwd, package_key=package_key)
+                        favorites_updated = sql_update_favorites(
+                            condition=EmbyFavorites.embyname == embyuser.name,
+                            embyid=embyid,
+                            package_key=package_key,
+                        )
 @bot.on_message(filters.command('kick_not_emby', prefixes) & admins_on_filter & filters.group)
 async def kick_not_emby(_, msg):
     await deleteMessage(msg)
