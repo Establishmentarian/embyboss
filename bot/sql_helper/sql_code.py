@@ -215,8 +215,8 @@ def sql_count_p_code(tg_id, us):
             return None, 1
 
 
-def sql_count_c_code(tg_id):
-    with Session() as session:
+def sql_count_c_code(tg_id, package_key: str = None):
+    with Session(package_key) as session:
         try:
             p = session.query(func.count()).filter(Code.tg == tg_id).scalar()
             if p == 0:

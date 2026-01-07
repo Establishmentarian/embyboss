@@ -137,8 +137,11 @@ async def members(_, call):
         return await callAnswer(call, '⚠️ 数据库没有你，请重新 /start录入', True)
     await callAnswer(call, f"✅ 用户界面")
     name, lv, ex, us, embyid, pwd2 = data
+    user_record = sql_get_emby(tg=call.from_user.id)
+    package_key = get_package_key_for_user_record(user_record) if user_record else get_package_key_by_level("b")
     text = f"▎__欢迎进入用户面板！{call.from_user.first_name}__\n\n" \
            f"**· 🆔 用户のID** | `{call.from_user.id}`\n" \
+           f"**· 📦 当前套餐** | `{package_key}`\n" \
            f"**· 📊 当前状态** | {lv}\n" \
            f"**· 🍒 积分{sakura_b}** | {us}\n" \
            f"**· 💠 账号名称** | [{name}](tg://user?id={call.from_user.id})\n" \
@@ -367,7 +370,7 @@ async def change_tg(_, call):
         else:
             if call.from_user.id == e.tg: return await editMessage(call, '⚠️ 您已经拥有账户。')
             if emby_pwd != e.pwd2:
-                package_key = get_package_key_by_level(e.lv)
+                package_key = get_package_key_for_user_record(e)
                 success, embyid = await emby.authority_account(
                     tg_id=call.from_user.id,
                     username=emby_name,
@@ -513,8 +516,8 @@ async def del_emby(_, call):
         return
 
     embyid = call.data.split('-')[1]
-    if await emby.emby_del(emby_id=embyid):
-        package_key = get_package_key_for_emby_id(embyid)
+    package_key = get_package_key_for_emby_id(embyid)
+    if await emby.emby_del(emby_id=embyid, package_key=package_key):
         sql_update_emby(
             Emby.embyid == embyid,
             embyid=None,
@@ -526,7 +529,7 @@ async def del_emby(_, call):
             ex=None,
             package_key=package_key,
         )
-        tem_deluser()
+        tem_deluser(package_key)
         send1 = await editMessage(call, '🗑️ 好了，已经为您删除...\n愿来日各自安好，山高水长，我们有缘再见！',
                                   buttons=back_members_ikb)
         if send1 is False:
@@ -547,6 +550,7 @@ async def reset(_, call):
     if e.embyid is None:
         return await bot.answer_callback_query(call.id, '未查询到账户，不许乱点！💢', show_alert=True)
     else:
+        package_key = get_package_key_for_user_record(e)
         await callAnswer(call, "🔴 请先进行 安全码 验证")
         send = await editMessage(call, '**🔰账户安全验证**：\n\n 👮🏻验证是否本人进行敏感操作，请对我发送您设置的安全码。倒计时 120 s\n'
                                        '🛑 **停止请点 /cancel**')
@@ -575,7 +579,7 @@ async def reset(_, call):
                 elif mima.text == '/cancel':
                     await mima.delete()
                     await editMessage(call, '**🎯 收到，正在重置ing。。。**')
-                    if await emby.emby_reset(emby_id=e.embyid) is True:
+                    if await emby.emby_reset(emby_id=e.embyid, package_key=package_key) is True:
                         await editMessage(call, '🕶️ 操作完成！已为您重置密码为 空。', buttons=back_members_ikb)
                         LOGGER.info(f"【重置密码】：{call.from_user.id} 成功重置了空密码！")
                     else:
@@ -585,7 +589,7 @@ async def reset(_, call):
                 else:
                     await mima.delete()
                     await editMessage(call, '**🎯 收到，正在重置ing。。。**')
-                    if await emby.emby_reset(emby_id=e.embyid, new_password=mima.text) is True:
+                    if await emby.emby_reset(emby_id=e.embyid, new_password=mima.text, package_key=package_key) is True:
                         await editMessage(call, f'🕶️ 操作完成！已为您重置密码为 `{mima.text}`。',
                                           buttons=back_members_ikb)
                         LOGGER.info(f"【重置密码】：{call.from_user.id} 成功重置了密码为 {mima.text} ！")
@@ -609,7 +613,8 @@ async def embyblocks(_, call):
         if send is False:
             return
     else:
-        success, rep = await emby.user(emby_id=data.embyid)
+        package_key = get_package_key_for_user_record(data)
+        success, rep = await emby.user(emby_id=data.embyid, package_key=package_key)
         try:
             if success is False:
                 stat = '💨 未知'
@@ -625,7 +630,7 @@ async def embyblocks(_, call):
                 else:
                     # 检查目标媒体库是否在启用列表中
                     # 需要获取媒体库ID来进行比较
-                    target_folder_ids = await emby.get_folder_ids_by_names(config.emby_block)
+                    target_folder_ids = await emby.get_folder_ids_by_names(config.emby_block, package_key=package_key)
                     if target_folder_ids and any(folder_id in enabled_folders for folder_id in target_folder_ids):
                         stat = '🟢 显示'
                     else:
@@ -646,11 +651,12 @@ async def user_emby_block(_, call):
     send = await callAnswer(call, f'🎬 正在为您关闭显示ing')
     if send is False:
         return
-    success, rep = await emby.user(emby_id=embyid)
+    package_key = get_package_key_for_emby_id(embyid)
+    success, rep = await emby.user(emby_id=embyid, package_key=package_key)
     if success:
         try:
             # 使用封装的隐藏媒体库方法
-            re = await emby.hide_folders_by_names(embyid, config.emby_block)
+            re = await emby.hide_folders_by_names(embyid, config.emby_block, package_key=package_key)
             if re is True:
                 send1 = await editMessage(call, f'🕶️ ο(=•ω＜=)ρ⌒☆\n 小尾巴隐藏好了！ ', buttons=user_emby_block_ikb)
                 if send1 is False:
@@ -669,11 +675,12 @@ async def user_emby_unblock(_, call):
     send = await callAnswer(call, f'🎬 正在为您开启显示ing')
     if send is False:
         return
-    success, rep = await emby.user(emby_id=embyid)
+    package_key = get_package_key_for_emby_id(embyid)
+    success, rep = await emby.user(emby_id=embyid, package_key=package_key)
     if success:
         try:
             # 使用封装的显示媒体库方法
-            re = await emby.show_folders_by_names(embyid, config.emby_block)
+            re = await emby.show_folders_by_names(embyid, config.emby_block, package_key=package_key)
             if re is True:
                 send1 = await editMessage(call, f'🕶️ ο(=•ω＜=)ρ⌒☆\n 小尾巴显示好了！ ', buttons=user_emby_unblock_ikb)
                 if send1 is False:
@@ -847,7 +854,11 @@ async def do_store_invite(_, call):
 
 @bot.on_callback_query(filters.regex('store-query'))
 async def do_store_query(_, call):
-    a, b = sql_count_c_code(tg_id=call.from_user.id)
+    user_record = sql_get_emby(tg=call.from_user.id)
+    if not user_record:
+        return await callAnswer(call, '❌ 空', True)
+    package_key = get_package_key_for_user_record(user_record)
+    a, b = sql_count_c_code(tg_id=call.from_user.id, package_key=package_key)
     if not a:
         return await callAnswer(call, '❌ 空', True)
     try:
@@ -868,9 +879,15 @@ async def my_favorite(_, call):
     get_emby = sql_get_emby(tg=call.from_user.id)
     if get_emby is None:
         return await callAnswer(call, '您还没有Emby账户', True)
+    package_key = get_package_key_for_user_record(get_emby)
     limit = 10
     start_index = (page - 1) * limit
-    favorites = await emby.get_favorite_items(emby_id=get_emby.embyid, start_index=start_index, limit=limit)
+    favorites = await emby.get_favorite_items(
+        emby_id=get_emby.embyid,
+        start_index=start_index,
+        limit=limit,
+        package_key=package_key,
+    )
     text = "**我的收藏**\n\n"
     for item in favorites.get("Items", []):
         item_id = item.get("Id")
@@ -900,7 +917,8 @@ async def my_devices(_, call):
     get_emby = sql_get_emby(tg=call.from_user.id)
     if get_emby is None:
         return await callAnswer(call, '您还没有Emby账户', True)
-    success, result = await emby.get_emby_userip(emby_id=get_emby.embyid)
+    package_key = get_package_key_for_user_record(get_emby)
+    success, result = await emby.get_emby_userip(emby_id=get_emby.embyid, package_key=package_key)
     if not success or len(result) == 0:
         return await callAnswer(call, '您好像没播放信息吖')
     else:
