@@ -30,6 +30,9 @@ async def sendMessage(message, text: str, buttons=None, timer=None, send=False, 
     try:
         if send is True:
             if chat_id is None:
+                if not group:
+                    LOGGER.warning("未配置群组ID，无法发送消息到主群。")
+                    return "⚠️ 未配置群组ID"
                 chat_id = group[0]
             return await bot.send_message(chat_id=chat_id, text=text, reply_markup=buttons, parse_mode=parse_mode)
         # 禁用通知 disable_notification=True,
@@ -122,6 +125,9 @@ async def sendPhoto(message, photo, caption=None, buttons=None, timer=None, send
     try:
         if send is True:
             if chat_id is None:
+                if not group:
+                    LOGGER.warning("未配置群组ID，无法发送图片到主群。")
+                    return "⚠️ 未配置群组ID"
                 chat_id = group[0]
             return await bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, reply_markup=buttons)
         # quote=True 引用回复

@@ -208,6 +208,8 @@ def convert_to_beijing_time(original_date):
 async def get_users():
     # 创建一个空字典来存储用户的 first_name 和 id
     members_dict = {}
+    if not group:
+        return members_dict
     async for member in bot.get_chat_members(group[0]):
         try:
             members_dict[member.user.id] = member.user.first_name
