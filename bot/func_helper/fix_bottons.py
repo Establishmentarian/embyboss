@@ -3,21 +3,23 @@ from typing import Optional
 from pykeyboard import InlineKeyboard, InlineButton
 from pyrogram.types import InlineKeyboardMarkup
 from pyromod.helpers import ikb, array_chunk
-from bot import chanel, main_group, bot_name, extra_emby_libs, tz_id, tz_ad, tz_api, _open, sakura_b, \
+from bot import chanel, main_group, bot_name, extra_emby_libs, tz_id, tz_ad, tz_api, sakura_b, \
     schedall, auto_update, fuxx_pitao, moviepilot, red_envelope, config, LOGGER
 from bot.func_helper import nezha_res
 from bot.func_helper.emby import emby
 from bot.func_helper.utils import members_info
+from bot.func_helper.package_utils import get_package_open_value, resolve_package_key
 
 cache = Cache()
 
 """start面板 ↓"""
 
 
-def judge_start_ikb(is_admin: bool, account: bool) -> InlineKeyboardMarkup:
+def judge_start_ikb(is_admin: bool, account: bool, package_key: Optional[str] = None) -> InlineKeyboardMarkup:
     """
     start面板按钮
     """
+    package_key = resolve_package_key(package_key)
     if not account:
         d = []
         d.append(['🎟️ 使用注册码', 'exchange'])
@@ -25,12 +27,13 @@ def judge_start_ikb(is_admin: bool, account: bool) -> InlineKeyboardMarkup:
         d.append(['⭕ 换绑TG', 'changetg'])
         d.append(['🔍 绑定TG', 'bindtg'])
         # 如果邀请等级为d （未注册用户也能使用），则显示兑换商店
-        if _open.invite_lv == 'd':
+        if get_package_open_value(package_key, "invite_lv") == 'd':
             d.append(['🏪 兑换商店', 'storeall'])
     else:
         d = [['️👥 用户功能', 'members'], ['🌐 服务器', 'server']]
         if schedall.check_ex: d.append(['🎟️ 使用续期码', 'exchange'])
-    if _open.checkin: d.append([f'🎯 签到', 'checkin'])
+    if get_package_open_value(package_key, "checkin"):
+        d.append([f'🎯 签到', 'checkin'])
     lines = array_chunk(d, 2)
     if is_admin: lines.append([['👮🏻‍♂️ admin', 'manage']])
     keyword = ikb(lines)
@@ -313,10 +316,11 @@ async def favorites_page_ikb(total_page: int, current_page: int) -> InlineKeyboa
     keyboard.row(*followUp)
     return keyboard
 def cr_renew_ikb(package_key: str):
-    checkin = '✔️' if _open.checkin else '❌'
-    exchange = '✔️' if _open.exchange else '❌'
-    whitelist = '✔️' if _open.whitelist else '❌'
-    invite = '✔️' if _open.invite else '❌'
+    package_key = resolve_package_key(package_key)
+    checkin = '✔️' if get_package_open_value(package_key, "checkin") else '❌'
+    exchange = '✔️' if get_package_open_value(package_key, "exchange") else '❌'
+    whitelist = '✔️' if get_package_open_value(package_key, "whitelist") else '❌'
+    invite = '✔️' if get_package_open_value(package_key, "invite") else '❌'
     # 添加邀请等级的显示
     lv_dic = {
         'a': '白名单',
@@ -324,8 +328,8 @@ def cr_renew_ikb(package_key: str):
         'c': '已禁用用户',
         'd': '所有人'
     }
-    invite_lv_text = lv_dic.get(_open.invite_lv, '未知')
-    checkin_lv_text = lv_dic.get(_open.checkin_lv, '未知')
+    invite_lv_text = lv_dic.get(get_package_open_value(package_key, "invite_lv"), '未知')
+    checkin_lv_text = lv_dic.get(get_package_open_value(package_key, "checkin_lv"), '未知')
     keyboard = InlineKeyboard(row_width=2)
     keyboard.add(InlineButton(f'{checkin} 每日签到', f'panel:set_renew:checkin:{package_key}'),
                  InlineButton(f'签到等级: {checkin_lv_text}', f'panel:set_checkin_lv:{package_key}'),
@@ -355,14 +359,16 @@ def checkin_lv_ikb(package_key: str):
 
 
 def config_preparation(package_key: Optional[str] = None) -> InlineKeyboardMarkup:
+    package_key = resolve_package_key(package_key)
     mp_set = '✅' if moviepilot.status else '❎'
     auto_up = '✅' if auto_update.status else '❎'
-    leave_ban = '✅' if _open.leave_ban else '❎'
-    uplays = '✅' if _open.uplays else '❎'
+    leave_ban = '✅' if get_package_open_value(package_key, "leave_ban") else '❎'
+    uplays = '✅' if get_package_open_value(package_key, "uplays") else '❎'
     fuxx_pt = '✅' if fuxx_pitao else '❎'
     red_envelope_status = '✅' if red_envelope.status else '❎'
     allow_private = '✅' if red_envelope.allow_private else '❎'
-    checkin_lv_text = {'a': '白名单', 'b': '普通用户', 'd': '所有人'}.get(_open.checkin_lv, '所有人')
+    checkin_lv = get_package_open_value(package_key, "checkin_lv")
+    checkin_lv_text = {'a': '白名单', 'b': '普通用户', 'd': '所有人'}.get(checkin_lv, '所有人')
     line_callback = f'set_line:{package_key}' if package_key else 'set_line'
     whitelist_line_callback = f'set_whitelist_line:{package_key}' if package_key else 'set_whitelist_line'
     checkin_callback = f'panel:set_checkin_lv:{package_key}' if package_key else 'set_checkin_lv'
@@ -371,7 +377,7 @@ def config_preparation(package_key: Optional[str] = None) -> InlineKeyboardMarku
         [[('📄 导出日志', 'log_out'), ('📌 设置探针', 'set_tz')],
          [('🎬 显/隐指定库', 'set_block'), (f'{fuxx_pt} 皮套人过滤功能', 'set_fuxx_pitao')],
          [('💠 普通用户线路', line_callback), ('🌟 白名单线路', whitelist_line_callback)],
-         [(f'{leave_ban} 退群封禁', 'leave_ban'), (f'{uplays} 观影奖励结算', 'set_uplays')],
+         [(f'{leave_ban} 退群封禁', f'leave_ban:{package_key}'), (f'{uplays} 观影奖励结算', f'set_uplays:{package_key}')],
          [(f'{auto_up} 自动更新bot', 'set_update'), (f'{mp_set} Moviepilot点播', 'set_mp')],
          [(f'{red_envelope_status} 红包', 'set_red_envelope_status'), (f'{allow_private} 专属红包', 'set_red_envelope_allow_private')],
          [(f'设置赠送资格天数({config.kk_gift_days}天)', 'set_kk_gift_days'), (f'设置活跃检测天数({config.activity_check_days}天)', 'set_activity_check_days')],

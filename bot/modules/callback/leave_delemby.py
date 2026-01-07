@@ -2,7 +2,8 @@ from pyrogram import filters
 from pyrogram.enums import ChatMemberStatus
 from pyrogram.types import ChatMemberUpdated
 
-from bot import bot, group, LOGGER, _open
+from bot import bot, group, LOGGER
+from bot.func_helper.package_utils import get_package_key_for_user_record, get_package_open_value
 from bot.func_helper.utils import tem_deluser
 from bot.sql_helper.sql_emby import sql_get_emby, sql_update_emby, Emby
 from bot.func_helper.emby import emby
@@ -18,9 +19,10 @@ async def leave_del_emby(_, event: ChatMemberUpdated):
                 e = sql_get_emby(tg=user_id)
                 if e is None or e.embyid is None:
                     return
+                package_key = get_package_key_for_user_record(e)
                 if await emby.emby_del(emby_id=e.embyid):
                     sql_update_emby(Emby.embyid == e.embyid, embyid=None, name=None, pwd=None, pwd2=None, lv='d', cr=None, ex=None)
-                    tem_deluser()
+                    tem_deluser(package_key)
                     LOGGER.info(
                         f'【退群删号】- {user_fname}-{user_id} 已经离开了群组，咕噜噜，ta的账户被吃掉啦！')
                     await bot.send_message(chat_id=event.chat.id,
@@ -30,7 +32,7 @@ async def leave_del_emby(_, event: ChatMemberUpdated):
                         f'【退群删号】- {user_fname}-{user_id} 已经离开了群组，但是没能吃掉ta的账户，请管理员检查！')
                     await bot.send_message(chat_id=event.chat.id,
                                            text=f'❎ [{user_fname}](tg://user?id={user_id}) 已经离开了群组，但是没能吃掉ta的账户，请管理员检查！')
-                if _open.leave_ban:
+                if get_package_open_value(package_key, "leave_ban"):
                     await bot.ban_chat_member(chat_id=event.chat.id, user_id=user_id)
             except Exception as e:
                 LOGGER.error(f"【退群删号】- {user_id}: {e}")
@@ -45,10 +47,11 @@ async def leave_del_emby(_, event: ChatMemberUpdated):
                 e = sql_get_emby(tg=user_id)
                 if e is None or e.embyid is None:
                     return
+                package_key = get_package_key_for_user_record(e)
                 if await emby.emby_del(emby_id=e.embyid):
                     sql_update_emby(Emby.embyid == e.embyid, embyid=None, name=None, pwd=None, pwd2=None, lv='d', cr=None,
                                     ex=None)
-                    tem_deluser()
+                    tem_deluser(package_key)
                     LOGGER.info(
                         f'【退群删号】- {user_fname}-{user_id} 已经离开了群组，咕噜噜，ta的账户被吃掉啦！')
                     await bot.send_message(chat_id=event.chat.id,
@@ -58,7 +61,7 @@ async def leave_del_emby(_, event: ChatMemberUpdated):
                         f'【退群删号】- {user_fname}-{user_id} 已经离开了群组，但是没能吃掉ta的账户，请管理员检查！')
                     await bot.send_message(chat_id=event.chat.id,
                                            text=f'❎ [{user_fname}](tg://user?id={user_id}) 已经离开了群组，但是没能吃掉ta的账户，请管理员检查！')
-                if _open.leave_ban:
+                if get_package_open_value(package_key, "leave_ban"):
                     await bot.ban_chat_member(chat_id=event.chat.id, user_id=user_id)
             except Exception as e:
                 LOGGER.error(f"【退群删号】- {user_id}: {e}")

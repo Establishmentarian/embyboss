@@ -2,7 +2,8 @@ import math
 import cn2an
 from datetime import datetime, timezone, timedelta
 
-from bot import bot, bot_photo, group, sakura_b, LOGGER, ranks, _open 
+from bot import bot, bot_photo, group, sakura_b, LOGGER, ranks, default_package
+from bot.func_helper.package_utils import get_package_open_value
 from bot.func_helper.emby import emby
 from bot.func_helper.utils import convert_to_beijing_time, convert_s, cache, get_users, tem_deluser
 from bot.sql_helper import Session
@@ -89,7 +90,7 @@ class Uplaysinfo:
                                         caption=f'🍥 获取过去{days}天UserPlays失败了嘤嘤嘤 ~ 手动重试 ')
         play_button = await plays_list_button(n, 1, days)
         send = await bot.send_photo(chat_id=group[0], photo=bot_photo, caption=a[0], reply_markup=play_button)
-        if uplays and _open.uplays:
+        if uplays and get_package_open_value(default_package, "uplays"):
             if sql_update_embys(some_list=ls, method='iv'):
                 text = f'**自动将观看时长转换为{sakura_b}**\n\n'
                 for i in ls:

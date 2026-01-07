@@ -3,12 +3,12 @@
 """
 from datetime import timedelta, datetime
 
-from bot import bot, _open, LOGGER, bot_photo
+from bot import bot, LOGGER, bot_photo
 from bot.func_helper.emby import emby
 from bot.func_helper.fix_bottons import register_code_ikb
 from bot.func_helper.msg_utils import sendMessage, sendPhoto
 from bot.sql_helper.sql_code import Code
-from bot.func_helper.package_utils import db_package_context, get_package_key_for_user_record
+from bot.func_helper.package_utils import db_package_context, get_package_key_for_user_record, get_package_open_value
 from bot.sql_helper.sql_emby import sql_get_emby, Emby
 from bot.sql_helper import Session
 
@@ -21,14 +21,14 @@ def is_renew_code(input_string):
 
 
 async def rgs_code(_, msg, register_code):
-    if _open.stat: return await sendMessage(msg, "🤧 自由注册开启下无法使用注册码。")
-
     data = sql_get_emby(tg=msg.from_user.id)
     if not data: return await sendMessage(msg, "出错了，不确定您是否有资格使用，请先 /start")
+    package_key = get_package_key_for_user_record(data)
+    if get_package_open_value(package_key, "open_stat"):
+        return await sendMessage(msg, "🤧 自由注册开启下无法使用注册码。")
     embyid = data.embyid
     ex = data.ex
     lv = data.lv
-    package_key = get_package_key_for_user_record(data)
     if embyid:
         if not is_renew_code(register_code): return await sendMessage(msg,
                                                                       "🔔 很遗憾，您使用的是注册码，无法启用续期功能，请悉知",

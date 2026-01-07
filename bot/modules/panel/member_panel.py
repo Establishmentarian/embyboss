@@ -11,13 +11,14 @@ import math
 import random
 from datetime import timedelta, datetime
 from bot.schemas import ExDate, Yulv
-from bot import bot, LOGGER, _open, sakura_b, ranks, group, extra_emby_libs, config, bot_name, schedall
+from bot import bot, LOGGER, sakura_b, ranks, group, extra_emby_libs, config, bot_name, schedall
 from pyrogram import filters
 from bot.func_helper.emby import emby, get_package_key_for_emby_id
 from bot.func_helper.filters import user_in_group_on_filter
 from bot.func_helper.package_utils import (
-    get_line_for_level,
+    get_package_config,
     get_line_for_user,
+    get_package_open_value,
     get_package_key_by_level,
     get_package_key_for_user_record,
 )
@@ -36,7 +37,7 @@ from bot.sql_helper.sql_emby2 import sql_get_emby2, sql_delete_emby2
 _create_user_lock = asyncio.Lock()
 
 # 创号函数
-async def create_user(_, call, us, stats):
+async def create_user(_, call, us, stats, package_key: str):
     msg = await ask_return(call,
                            text='🤖**注意：您已进入注册状态:\n\n• 请在2min内输入 `[用户名][空格][安全码]`\n• 举个例子🌰：`苏苏 1234`**\n\n• 用户名中不限制中/英文/emoji，🚫**特殊字符**'
                                 '\n• 安全码为敏感操作时附加验证，请填入最熟悉的数字4~6位；退出请点 /cancel', timer=120,
@@ -55,14 +56,15 @@ async def create_user(_, call, us, stats):
         # 使用锁保护检查和创建过程
         async with _create_user_lock:
             # 再次检查限制（双重检查）
-            if _open.tem >= _open.all_user:
-                return await msg.reply(f'**🚫 很抱歉，注册总数({_open.tem})已达限制({_open.all_user})。**')
+            tem = get_package_open_value(package_key, "open_tem") or 0
+            all_user = get_package_open_value(package_key, "open_all_user") or 0
+            if all_user and tem >= all_user:
+                return await msg.reply(f'**🚫 很抱歉，注册总数({tem})已达限制({all_user})。**')
             
             send = await msg.reply(
                 f'🆗 会话结束，收到设置\n\n用户名：**{emby_name}**  安全码：**{emby_pwd2}** \n\n__正在为您初始化账户，更新用户策略__......')
             
             # emby api操作
-            package_key = get_package_key_by_level("b")
             data = await emby.emby_create(name=emby_name, days=us, package_key=package_key)
             if not data:
                 await editMessage(send,
@@ -104,7 +106,7 @@ async def create_user(_, call, us, stats):
                     )
                 
                 # 在锁内更新计数器
-                tem_adduser()
+                tem_adduser(package_key)
                 
                 if schedall.check_ex:
                     ex = ex.strftime("%Y-%m-%d %H:%M:%S")
@@ -120,7 +122,7 @@ async def create_user(_, call, us, stats):
                                   f'· 安全密码 | `{emby_pwd2}`（仅发送一次）\n'
                                   f'· 到期时间 | `{ex}`\n'
                                   f'· 当前线路：\n'
-                                  f'{get_line_for_level("b")}\n\n'
+                                  f'{get_package_config(package_key).emby_line}\n\n'
                                   f'**·【服务器】 - 查看线路和密码**')
                 
                 LOGGER.info(f"【创建账户】[开注状态]：{call.from_user.id} - 建立了 {emby_name} ") if stats else LOGGER.info(
@@ -164,22 +166,25 @@ async def create(_, call):
     if not e:
         return await callAnswer(call, '⚠️ 数据库没有你，请重新 /start录入', True)
 
+    package_key = get_package_key_for_user_record(e)
+    open_stat = get_package_open_value(package_key, "open_stat")
+    open_us = get_package_open_value(package_key, "open_us")
     if e.embyid:
         await callAnswer(call, '💦 你已经有账户啦！请勿重复注册。', True)
-    elif not _open.stat and int(e.us) <= 0:
+    elif not open_stat and int(e.us) <= 0:
         await callAnswer(call, f'🤖 自助注册已关闭，等待开启或使用注册码注册。', True)
-    elif not _open.stat and int(e.us) > 0:
+    elif not open_stat and int(e.us) > 0:
         send = await callAnswer(call, f'🪙 资质核验成功，请稍后。', True)
         if send is False:
             return
         else:
-            await create_user(_, call, us=e.us, stats=False)
-    elif _open.stat:
+            await create_user(_, call, us=e.us, stats=False, package_key=package_key)
+    elif open_stat:
         send = await callAnswer(call, f"🪙 开放注册中，免除资质核验。", True)
         if send is False:
             return
         else:
-            await create_user(_, call, us=_open.open_us, stats=True)
+            await create_user(_, call, us=open_us, stats=True, package_key=package_key)
 
 
 # 换绑tg
@@ -442,7 +447,7 @@ async def bind_tg(_, call):
                            f'· 用户密码 | `{pwd[0]}`\n' \
                            f'· 安全密码 | `{pwd[1]}`（仅发送一次）\n' \
                            f'· 到期时间 | `{ex}`\n\n' \
-                           f'· 当前线路：\n{get_line_for_level("b")}\n\n' \
+                           f'· 当前线路：\n{get_package_config(package_key).emby_line}\n\n' \
                            f'· **在【服务器】按钮 - 查看线路和密码**'
                     package_key = get_package_key_by_level("b")
                     sql_update_emby(
@@ -696,9 +701,13 @@ async def call_exchange(_, call):
 
 @bot.on_callback_query(filters.regex('storeall'))
 async def do_store(_, call):
+    e = sql_get_emby(tg=call.from_user.id)
+    package_key = get_package_key_for_user_record(e) if e else get_package_key_by_level("b")
+    exchange = get_package_open_value(package_key, "exchange")
+    exchange_cost = get_package_open_value(package_key, "exchange_cost")
     await asyncio.gather(callAnswer(call, '✔️ 欢迎进入兑换商店'),
                          editMessage(call,
-                                     f'**🏪 请选择想要使用的服务：**\n\n🤖 自动{sakura_b}续期状态：{_open.exchange} {_open.exchange_cost}/月',
+                                     f'**🏪 请选择想要使用的服务：**\n\n🤖 自动{sakura_b}续期状态：{exchange} {exchange_cost}/月',
                                      buttons=store_ikb()))
 
 
@@ -712,9 +721,11 @@ async def do_store_reborn(_, call):
     await callAnswer(call,
                      '✔️ 请仔细阅读：\n\n本功能仅为 因未活跃而被封禁的用户解封使用，到期状态下封禁的账户请勿使用，以免浪费积分。',
                      True)
-    if all([e.lv == 'c', e.iv >= _open.exchange_cost, schedall.low_activity]):
+    package_key = get_package_key_for_user_record(e)
+    exchange_cost = get_package_open_value(package_key, "exchange_cost")
+    if all([e.lv == 'c', e.iv >= exchange_cost, schedall.low_activity]):
         await editMessage(call,
-                          f'🏪 您已满足基础要求，此次将花费 {_open.exchange_cost}{sakura_b} 解除未活跃的封禁，确认请回复 /ok，退出 /cancel')
+                          f'🏪 您已满足基础要求，此次将花费 {exchange_cost}{sakura_b} 解除未活跃的封禁，确认请回复 /ok，退出 /cancel')
         m = await callListen(call, 120, buttons=re_born_ikb)
         if m is False:
             return
@@ -722,43 +733,44 @@ async def do_store_reborn(_, call):
         elif m.text == '/cancel':
             await asyncio.gather(m.delete(), do_store(_, call))
         else:
-            package_key = get_package_key_for_user_record(e)
             sql_update_emby(
                 Emby.tg == call.from_user.id,
-                iv=e.iv - _open.exchange_cost,
+                iv=e.iv - exchange_cost,
                 lv='b',
                 package_key=package_key,
             )
             await emby.emby_change_policy(emby_id=e.embyid, package_key=package_key)
-            LOGGER.info(f'【兑换解封】- {call.from_user.id} 已花费 {_open.exchange_cost}{sakura_b},解除封禁')
+            LOGGER.info(f'【兑换解封】- {call.from_user.id} 已花费 {exchange_cost}{sakura_b},解除封禁')
             await asyncio.gather(m.delete(), do_store(_, call),
                                  sendMessage(call, '解封成功<(￣︶￣)↗[GO!]\n此消息将在20s后自焚', timer=20))
     else:
         await sendMessage(call, '❌ 不满足以下要求！ヘ(￣ω￣ヘ)\n\n'
                                 '1. 被封禁账户\n'
-                                f'2. 至少持有 {_open.exchange_cost}{sakura_b}\n'
+                                f'2. 至少持有 {exchange_cost}{sakura_b}\n'
                                 f'3. 【定时策略】活跃检测开启'
                                 f'此消息将在20s后自焚', timer=20)
 
 
 @bot.on_callback_query(filters.regex('store-whitelist'))
 async def do_store_whitelist(_, call):
-    if _open.whitelist:
-        e = sql_get_emby(tg=call.from_user.id)
-        if e is None:
-            return
+    e = sql_get_emby(tg=call.from_user.id)
+    if e is None:
+        return
+    package_key = get_package_key_for_user_record(e)
+    whitelist_enabled = get_package_open_value(package_key, "whitelist")
+    whitelist_cost = get_package_open_value(package_key, "whitelist_cost")
+    if whitelist_enabled:
         if not e.embyid or not e.name:
             return await callAnswer(call, '❌ 未查询到账户，不许乱点！', True)
-        if e.iv < _open.whitelist_cost or e.lv == 'a':
+        if e.iv < whitelist_cost or e.lv == 'a':
             return await callAnswer(call,
-                                    f'🏪 兑换规则：\n当前兑换白名单需要 {_open.whitelist_cost} {sakura_b}，已有白名单无法再次消费。勉励',
+                                    f'🏪 兑换规则：\n当前兑换白名单需要 {whitelist_cost} {sakura_b}，已有白名单无法再次消费。勉励',
                                     True)
-        await callAnswer(call, f'🏪 您已满足 {_open.whitelist_cost} {sakura_b}要求', True)
-        package_key = get_package_key_for_user_record(e)
+        await callAnswer(call, f'🏪 您已满足 {whitelist_cost} {sakura_b}要求', True)
         sql_update_emby(
             Emby.tg == call.from_user.id,
             lv='a',
-            iv=e.iv - _open.whitelist_cost,
+            iv=e.iv - whitelist_cost,
             package_key=package_key,
         )
         send = await call.message.edit(f'**{random.choice(Yulv.load_yulv().wh_msg)}**\n\n'
@@ -771,17 +783,21 @@ async def do_store_whitelist(_, call):
 
 @bot.on_callback_query(filters.regex('store-invite'))
 async def do_store_invite(_, call):
-    if _open.invite:
-        e = sql_get_emby(tg=call.from_user.id)
-        if not e:
-            return
+    e = sql_get_emby(tg=call.from_user.id)
+    if not e:
+        return
+    package_key = get_package_key_for_user_record(e)
+    invite_enabled = get_package_open_value(package_key, "invite")
+    invite_lv = get_package_open_value(package_key, "invite_lv")
+    invite_cost = get_package_open_value(package_key, "invite_cost")
+    if invite_enabled:
         # 用户等级为 a（白名单） b(普通用户) c(已禁用) d（未注册用户）
         # 比如当 _open.invite_lv 设置为 d 时，用户等级为 小于等于d 的用户可以兑换，否则无法兑换
-        if e.lv > _open.invite_lv:
+        if e.lv > invite_lv:
             return await callAnswer(call, '❌ 账号等级不足，无法兑换', True)
-        if e.iv < _open.invite_cost:
+        if e.iv < invite_cost:
             return await callAnswer(call,
-                                    f'🏪 兑换规则：\n当前兑换注册码至少需要 {_open.invite_cost} {sakura_b}。你的账户只有 {e.iv} {sakura_b}，勉励',
+                                    f'🏪 兑换规则：\n当前兑换注册码至少需要 {invite_cost} {sakura_b}。你的账户只有 {e.iv} {sakura_b}，勉励',
                                     True)
         await editMessage(call,
                           f'🎟️ 请回复创建 [类型] [数量] [模式]\n\n'
@@ -790,7 +806,7 @@ async def do_store_invite(_, call):
                           # f'**续期**： F - 注册码，T - 续期码\n'
                           f'**示例**：`mon 1 link` 记作 1条 月度注册链接 \n'
                           f'**示例**：`sea 1 code` 记作 1条 季度注册码\n'
-                          f'**注意**：兑率 30天 = {_open.invite_cost}{sakura_b}\n'
+                          f'**注意**：兑率 30天 = {invite_cost}{sakura_b}\n'
                           f'__取消本次操作，请 /cancel__')
         content = await callListen(call, 120)
         if content is False:
@@ -802,7 +818,7 @@ async def do_store_invite(_, call):
             times, count, method = content.text.split()
             days = getattr(ExDate(), times)
             count = int(count)
-            cost = math.floor((days * count / 30) * _open.invite_cost)
+            cost = math.floor((days * count / 30) * invite_cost)
             if e.iv < cost:
                 return await asyncio.gather(content.delete(),
                                             sendMessage(call,
@@ -817,7 +833,7 @@ async def do_store_invite(_, call):
         else:
             package_key = get_package_key_for_user_record(e)
             sql_update_emby(Emby.tg == call.from_user.id, iv=e.iv - cost, package_key=package_key)
-            links = await cr_link_one(call.from_user.id, days, count, days, method)
+            links = await cr_link_one(call.from_user.id, days, count, days, method, package_key=package_key)
             if links is None:
                 return await editMessage(call, '⚠️ 数据库插入失败，请检查数据库')
             links = f"🎯 {bot_name}已为您生成了 **{days}天** 注册码 {count} 个\n\n" + links

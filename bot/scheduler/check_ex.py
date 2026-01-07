@@ -6,7 +6,8 @@ from datetime import timedelta, datetime
 from pyrogram.errors import FloodWait
 from sqlalchemy import and_
 from asyncio import sleep
-from bot import bot, group, LOGGER, _open, config
+from bot import bot, group, LOGGER, config
+from bot.func_helper.package_utils import get_package_key_for_user_record, get_package_open_value
 from bot.func_helper.emby import emby
 from bot.func_helper.utils import tem_deluser
 from bot.sql_helper.sql_emby import Emby, get_all_emby, sql_update_emby
@@ -39,9 +40,13 @@ async def check_expired():
                 await bot.send_message(r.tg, text)
             except Exception as e:
                 LOGGER.error(e)
+            continue
 
-        elif _open.exchange and r.iv >= _open.exchange_cost:
-            b = r.iv - _open.exchange_cost
+        package_key = get_package_key_for_user_record(r)
+        exchange_enabled = get_package_open_value(package_key, "exchange")
+        exchange_cost = get_package_open_value(package_key, "exchange_cost")
+        if exchange_enabled and r.iv >= exchange_cost:
+            b = r.iv - exchange_cost
             if sql_update_emby(Emby.tg == r.tg, ex=ext, iv=b):
                 text = f'【到期检测】\n#id{r.tg} 续期账户 [{r.name}](tg://user?id={r.tg})\n' \
                        f'在当前时间自动续期30天\n' \
@@ -107,9 +112,13 @@ async def check_expired():
                 await bot.send_message(c.tg, text)
             except Exception as e:
                 LOGGER.error(e)
+            continue
 
-        elif _open.exchange and c.iv >= _open.exchange_cost:
-            c_iv = c.iv - _open.exchange_cost
+        package_key = get_package_key_for_user_record(c)
+        exchange_enabled = get_package_open_value(package_key, "exchange")
+        exchange_cost = get_package_open_value(package_key, "exchange_cost")
+        if exchange_enabled and c.iv >= exchange_cost:
+            c_iv = c.iv - exchange_cost
             if await emby.emby_change_policy(emby_id=c.embyid, disable=False):
                 if sql_update_emby(Emby.tg == c.tg, lv='b', ex=ext, iv=c_iv):
                     text = f'【到期检测】\n#id{c.tg} 解封账户 [{c.name}](tg://user?id={c.tg})\n在当前时间自动续期30天\n📅实时到期：{ext.strftime("%Y-%m-%d %H:%M:%S")}'
@@ -136,7 +145,7 @@ async def check_expired():
             if await emby.emby_del(emby_id=c.embyid):
                 sql_update_emby(Emby.embyid == c.embyid, embyid=None, name=None, pwd=None, pwd2=None, lv='d', cr=None,
                                 ex=None)
-                tem_deluser()
+                tem_deluser(get_package_key_for_user_record(c))
                 text = f'【到期检测】\n#id{c.tg} 删除账户 [{c.name}](tg://user?id={c.tg})\n已到期 {config.freeze_days} 天，执行清除任务。期待下次与你相遇'
                 LOGGER.info(text)
             else:
