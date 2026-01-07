@@ -9,6 +9,7 @@ from bot.func_helper.filters import admins_on_filter
 from bot.func_helper.msg_utils import deleteMessage, sendMessage
 from bot.sql_helper.sql_emby import sql_get_emby, sql_update_emby, Emby
 from bot.sql_helper.sql_emby2 import sql_get_emby2, sql_update_emby2, Emby2
+from bot.func_helper.package_utils import get_package_key_for_user_record
 
 
 async def get_user_input(msg):
@@ -56,10 +57,11 @@ async def renew_user(_, msg):
     Now = datetime.now()
     ex_new = Now + timedelta(days=days) if Now > e.ex else e.ex + timedelta(days=days)
     lv = e.lv
+    package_key = get_package_key_for_user_record(e)
     # 无脑 允许播放
     if ex_new > Now:
         lv = 'a' if e.lv == 'a' else 'b'
-        await emby.emby_change_policy(emby_id=e.embyid, disable=False)
+        await emby.emby_change_policy(emby_id=e.embyid, disable=False, package_key=package_key)
 
     # 没有白名单就寄
     elif ex_new < Now:
@@ -67,13 +69,13 @@ async def renew_user(_, msg):
             pass
         else:
             lv = 'c'
-            await emby.emby_change_policy(emby_id=e.embyid, disable=True)
+            await emby.emby_change_policy(emby_id=e.embyid, disable=True, package_key=package_key)
 
     if stats == 1:
         expired = 1 if lv == 'c' else 0
-        sql_update_emby2(Emby2.embyid == e.embyid, ex=ex_new, expired=expired)
+        sql_update_emby2(Emby2.embyid == e.embyid, ex=ex_new, expired=expired, package_key=package_key)
     else:
-        sql_update_emby(Emby.tg == e.tg, ex=ex_new, lv=lv)
+        sql_update_emby(Emby.tg == e.tg, ex=ex_new, lv=lv, package_key=package_key)
 
     i = await reply.edit(
         f'🍒 __ {gm_name} 已调整 emby 用户 {name} 到期时间 {days} 天 (以当前时间计)__'

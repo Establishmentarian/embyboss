@@ -6,7 +6,7 @@ from pyrogram.types import CallbackQuery
 
 from bot import bot, prefixes, LOGGER, owner, bot_photo, schedall, config
 from bot.func_helper.emby import emby
-from bot.func_helper.package_utils import get_line_for_level
+from bot.func_helper.package_utils import get_line_for_level, get_package_key_for_user_record
 from bot.func_helper.filters import admins_on_filter
 from bot.func_helper.fix_bottons import cv_user_playback_reporting, close_it_ikb
 from bot.func_helper.msg_utils import sendMessage, editMessage, sendPhoto 
@@ -63,7 +63,7 @@ async def urm_user(_, msg):
         return await asyncio.gather(editMessage(reply,
                                                 "🔔 **使用格式：**/urm [emby用户名]，此命令用于删除指定用户名的用户"),
                                     msg.delete())
-    e = sql_get_emby(tg=b)
+    e = sql_get_emby(b)
     stats = None
     if not e:
         e2 = sql_get_emby2(name=b)
@@ -72,9 +72,10 @@ async def urm_user(_, msg):
         e = e2
         stats = 1
 
+    package_key = get_package_key_for_user_record(e)
     if await emby.emby_del(emby_id=e.embyid):
         sql_update_emby(Emby.tg == e.tg, lv='d', name=None, embyid=None, cr=None,
-                        ex=None) if not stats else sql_delete_emby2(e.embyid)
+                        ex=None, package_key=package_key) if not stats else sql_delete_emby2(e.embyid, package_key=package_key)
         try:
             await reply.edit(
                 f'🎯 done，管理员 [{msg.from_user.first_name}](tg://user?id={msg.from_user.id})\n'
