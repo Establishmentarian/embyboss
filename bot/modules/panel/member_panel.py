@@ -13,9 +13,14 @@ from datetime import timedelta, datetime
 from bot.schemas import ExDate, Yulv
 from bot import bot, LOGGER, _open, sakura_b, ranks, group, extra_emby_libs, config, bot_name, schedall
 from pyrogram import filters
-from bot.func_helper.emby import emby
+from bot.func_helper.emby import emby, get_package_key_for_emby_id
 from bot.func_helper.filters import user_in_group_on_filter
-from bot.func_helper.package_utils import get_line_for_level, get_line_for_user, get_package_key_by_level
+from bot.func_helper.package_utils import (
+    get_line_for_level,
+    get_line_for_user,
+    get_package_key_by_level,
+    get_package_key_for_user_record,
+)
 from bot.func_helper.utils import members_info, tem_adduser, cr_link_one, judge_admins, tem_deluser, pwd_create
 from bot.func_helper.fix_bottons import members_ikb, back_members_ikb, re_create_ikb, del_me_ikb, re_delme_ikb, \
     re_reset_ikb, re_changetg_ikb, emby_block_ikb, user_emby_block_ikb, user_emby_unblock_ikb, re_exchange_b_ikb, \
@@ -73,9 +78,30 @@ async def create_user(_, call, us, stats):
                 
                 # 数据库操作
                 if stats:
-                    sql_update_emby(Emby.tg == tg, embyid=eid, name=emby_name, pwd=pwd, pwd2=emby_pwd2, lv='b', cr=datetime.now(), ex=ex) 
+                    sql_update_emby(
+                        Emby.tg == tg,
+                        embyid=eid,
+                        name=emby_name,
+                        pwd=pwd,
+                        pwd2=emby_pwd2,
+                        lv='b',
+                        cr=datetime.now(),
+                        ex=ex,
+                        package_key=package_key,
+                    )
                 else:
-                    sql_update_emby(Emby.tg == tg, embyid=eid, name=emby_name, pwd=pwd, pwd2=emby_pwd2, lv='b', cr=datetime.now(), ex=ex, us=0)
+                    sql_update_emby(
+                        Emby.tg == tg,
+                        embyid=eid,
+                        name=emby_name,
+                        pwd=pwd,
+                        pwd2=emby_pwd2,
+                        lv='b',
+                        cr=datetime.now(),
+                        ex=ex,
+                        us=0,
+                        package_key=package_key,
+                    )
                 
                 # 在锁内更新计数器
                 tem_adduser()
@@ -175,9 +201,22 @@ async def change_tg(_, call):
         e = sql_get_emby(tg=replace_id)
         if not e or not e.embyid: return await bot.send_message(current_id, '⁉️ 出错了，您所换绑账户已不存在。')
         
+        package_key = get_package_key_for_user_record(e)
         # 清空原账号信息但保留tg
-        if sql_update_emby(Emby.tg == replace_id, embyid=None, name=None, pwd=None, pwd2=None, 
-                          lv='d', cr=None, ex=None, us=0, iv=0, ch=None):
+        if sql_update_emby(
+            Emby.tg == replace_id,
+            embyid=None,
+            name=None,
+            pwd=None,
+            pwd2=None,
+            lv='d',
+            cr=None,
+            ex=None,
+            us=0,
+            iv=0,
+            ch=None,
+            package_key=package_key,
+        ):
             LOGGER.info(f'【TG改绑】清空原账户 id{e.tg} 成功')
         else:
             await bot.send_message(current_id, "🍰 **⭕#TG改绑 原账户清空错误，请联系闺蜜（管理）！**")
@@ -186,8 +225,18 @@ async def change_tg(_, call):
 
         # 将原账号的币值转移到新账号
         old_iv = e.iv
-        if sql_update_emby(Emby.tg == current_id, embyid=e.embyid, name=e.name, pwd=e.pwd, pwd2=e.pwd2,
-                           lv=e.lv, cr=e.cr, ex=e.ex, iv=old_iv):
+        if sql_update_emby(
+            Emby.tg == current_id,
+            embyid=e.embyid,
+            name=e.name,
+            pwd=e.pwd,
+            pwd2=e.pwd2,
+            lv=e.lv,
+            cr=e.cr,
+            ex=e.ex,
+            iv=old_iv,
+            package_key=package_key,
+        ):
             text = f'⭕ 请接收您的信息！\n\n' \
                    f'· 用户名称 | `{e.name}`\n' \
                    f'· 用户密码 | `{e.pwd}`\n' \
@@ -255,9 +304,19 @@ async def change_tg(_, call):
                     return await editMessage(call,
                                              f'💢 安全码or密码验证错误，请检查输入\n{emby_name} {emby_pwd} 是否正确。',
                                              buttons=re_changetg_ikb)
-                sql_update_emby(Emby.tg == call.from_user.id, embyid=embyid, name=e2.name, pwd=emby_pwd,
-                                pwd2=e2.pwd2, lv=e2.lv, cr=e2.cr, ex=e2.ex)
-                sql_delete_emby2(embyid=e2.embyid)
+                package_key = get_package_key_for_user_record(e2)
+                sql_update_emby(
+                    Emby.tg == call.from_user.id,
+                    embyid=embyid,
+                    name=e2.name,
+                    pwd=emby_pwd,
+                    pwd2=e2.pwd2,
+                    lv=e2.lv,
+                    cr=e2.cr,
+                    ex=e2.ex,
+                    package_key=package_key,
+                )
+                sql_delete_emby2(embyid=e2.embyid, package_key=package_key)
                 text = f'⭕ 账户 {emby_name} 的密码验证成功！\n\n' \
                        f'· 用户名称 | `{emby_name}`\n' \
                        f'· 用户密码 | `{pwd[0]}`\n' \
@@ -280,9 +339,19 @@ async def change_tg(_, call):
                        f'· 到期时间 | `{e2.ex}`\n\n' \
                        f'· 当前线路：\n{get_line_for_user(e2)}\n\n' \
                        f'**·在【服务器】按钮 - 查看线路和密码**'
-                sql_update_emby(Emby.tg == call.from_user.id, embyid=e2.embyid, name=e2.name, pwd=e2.pwd,
-                                pwd2=emby_pwd, lv=e2.lv, cr=e2.cr, ex=e2.ex)
-                sql_delete_emby2(embyid=e2.embyid)
+                package_key = get_package_key_for_user_record(e2)
+                sql_update_emby(
+                    Emby.tg == call.from_user.id,
+                    embyid=e2.embyid,
+                    name=e2.name,
+                    pwd=e2.pwd,
+                    pwd2=emby_pwd,
+                    lv=e2.lv,
+                    cr=e2.cr,
+                    ex=e2.ex,
+                    package_key=package_key,
+                )
+                sql_delete_emby2(embyid=e2.embyid, package_key=package_key)
                 await sendMessage(call,
                                   f'⭕#TG改绑 原emby账户 #{emby_name}\n\n'
                                   f'从emby2表绑定至 [{call.from_user.first_name}](tg://user?id={call.from_user.id}) - {call.from_user.id}',
@@ -375,8 +444,18 @@ async def bind_tg(_, call):
                            f'· 到期时间 | `{ex}`\n\n' \
                            f'· 当前线路：\n{get_line_for_level("b")}\n\n' \
                            f'· **在【服务器】按钮 - 查看线路和密码**'
-                    sql_update_emby(Emby.tg == call.from_user.id, embyid=embyid, name=emby_name, pwd=pwd[0],
-                                    pwd2=pwd[1], lv='b', cr=datetime.now(), ex=ex)
+                    package_key = get_package_key_by_level("b")
+                    sql_update_emby(
+                        Emby.tg == call.from_user.id,
+                        embyid=embyid,
+                        name=emby_name,
+                        pwd=pwd[0],
+                        pwd2=pwd[1],
+                        lv='b',
+                        cr=datetime.now(),
+                        ex=ex,
+                        package_key=package_key,
+                    )
                     await editMessage(call, text)
                     await sendMessage(call,
                                       f'⭕#新TG绑定 原emby账户 #{emby_name} \n\n已绑定至 [{call.from_user.first_name}](tg://user?id={call.from_user.id}) - {call.from_user.id}',
@@ -430,7 +509,18 @@ async def del_emby(_, call):
 
     embyid = call.data.split('-')[1]
     if await emby.emby_del(emby_id=embyid):
-        sql_update_emby(Emby.embyid == embyid, embyid=None, name=None, pwd=None, pwd2=None, lv='d', cr=None, ex=None)
+        package_key = get_package_key_for_emby_id(embyid)
+        sql_update_emby(
+            Emby.embyid == embyid,
+            embyid=None,
+            name=None,
+            pwd=None,
+            pwd2=None,
+            lv='d',
+            cr=None,
+            ex=None,
+            package_key=package_key,
+        )
         tem_deluser()
         send1 = await editMessage(call, '🗑️ 好了，已经为您删除...\n愿来日各自安好，山高水长，我们有缘再见！',
                                   buttons=back_members_ikb)
@@ -632,8 +722,14 @@ async def do_store_reborn(_, call):
         elif m.text == '/cancel':
             await asyncio.gather(m.delete(), do_store(_, call))
         else:
-            sql_update_emby(Emby.tg == call.from_user.id, iv=e.iv - _open.exchange_cost, lv='b')
-            await emby.emby_change_policy(emby_id=e.embyid)
+            package_key = get_package_key_for_user_record(e)
+            sql_update_emby(
+                Emby.tg == call.from_user.id,
+                iv=e.iv - _open.exchange_cost,
+                lv='b',
+                package_key=package_key,
+            )
+            await emby.emby_change_policy(emby_id=e.embyid, package_key=package_key)
             LOGGER.info(f'【兑换解封】- {call.from_user.id} 已花费 {_open.exchange_cost}{sakura_b},解除封禁')
             await asyncio.gather(m.delete(), do_store(_, call),
                                  sendMessage(call, '解封成功<(￣︶￣)↗[GO!]\n此消息将在20s后自焚', timer=20))
@@ -658,7 +754,13 @@ async def do_store_whitelist(_, call):
                                     f'🏪 兑换规则：\n当前兑换白名单需要 {_open.whitelist_cost} {sakura_b}，已有白名单无法再次消费。勉励',
                                     True)
         await callAnswer(call, f'🏪 您已满足 {_open.whitelist_cost} {sakura_b}要求', True)
-        sql_update_emby(Emby.tg == call.from_user.id, lv='a', iv=e.iv - _open.whitelist_cost)
+        package_key = get_package_key_for_user_record(e)
+        sql_update_emby(
+            Emby.tg == call.from_user.id,
+            lv='a',
+            iv=e.iv - _open.whitelist_cost,
+            package_key=package_key,
+        )
         send = await call.message.edit(f'**{random.choice(Yulv.load_yulv().wh_msg)}**\n\n'
                                        f'🎉 恭喜[{call.from_user.first_name}](tg://user?id={call.from_user.id}) 今日晋升，{ranks["logo"]}白名单')
         await send.forward(group[0])
@@ -713,7 +815,8 @@ async def do_store_invite(_, call):
                                         do_store(_, call),
                                         content.delete())
         else:
-            sql_update_emby(Emby.tg == call.from_user.id, iv=e.iv - cost)
+            package_key = get_package_key_for_user_record(e)
+            sql_update_emby(Emby.tg == call.from_user.id, iv=e.iv - cost, package_key=package_key)
             links = await cr_link_one(call.from_user.id, days, count, days, method)
             if links is None:
                 return await editMessage(call, '⚠️ 数据库插入失败，请检查数据库')
