@@ -13,6 +13,7 @@ from bot.func_helper.msg_utils import deleteMessage, editMessage, callAnswer, ca
 from bot.func_helper.scheduler import scheduler
 from bot.scheduler.sync_mp_download import sync_download_tasks
 from bot.func_helper.permissions import has_permission, get_user_role
+from bot.func_helper.utils import get_users
 from bot.schemas import EmbyPackage
 import json
 from pyromod.helpers import ikb
@@ -75,6 +76,38 @@ def _package_edit_buttons(package_key: str) -> "InlineKeyboardMarkup":
     ]
     return ikb(rows)
 
+
+def _format_admin_lines() -> str:
+    admins_text = ", ".join(map(str, config.admins or [])) or "无"
+    operators_text = ", ".join(map(str, config.operators or [])) or "无"
+    return f"管理员: {admins_text}\n次级管理员: {operators_text}"
+
+
+def _paginate_members(members, page: int, per_page: int = 8):
+    total = len(members)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page
+    end = start + per_page
+    return members[start:end], page, total_pages
+
+
+def _member_select_buttons(candidates, action_prefix: str, page: int, back_callback: str):
+    rows = []
+    page_items, page, total_pages = _paginate_members(candidates, page)
+    for tgid, name in page_items:
+        label = f"➕ {name} ({tgid})"
+        rows.append([(label, f"{action_prefix}:{tgid}")])
+    nav_row = []
+    if total_pages > 1:
+        if page > 1:
+            nav_row.append(("⬅️ 上一页", f"{action_prefix}_page:{page - 1}"))
+        if page < total_pages:
+            nav_row.append(("➡️ 下一页", f"{action_prefix}_page:{page + 1}"))
+    if nav_row:
+        rows.append(nav_row)
+    rows.append([("🔙 返回", back_callback)])
+    return ikb(rows)
 
 async def _ensure_perm(call, perm: str):
     if not has_permission(call.from_user.id, perm):
@@ -718,11 +751,117 @@ async def set_config_any(_, call):
 async def admin_list(_, call):
     if not await _ensure_perm(call, "config_advanced"):
         return
-    text = "**👥 管理员列表**\n\n"
-    text += f"管理员: {', '.join(map(str, config.admins)) or '无'}\n"
-    text += f"次级管理员: {', '.join(map(str, config.operators)) or '无'}"
-    await editMessage(call, text, buttons=ikb([[("👮🏻 设置管理员", "set_admins"), ("👥 设置次级管理员", "set_operators")],
-                                               [("🔙 返回", "back_config")]]))
+    text = "**👥 管理员列表管理**\n\n"
+    text += _format_admin_lines()
+    text += "\n\n请选择操作："
+    rows = [
+        [("➕ 新增管理员", "admin_add_page:1"), ("➕ 新增次级管理员", "operator_add_page:1")],
+    ]
+    for admin_id in config.admins or []:
+        rows.append([(f"➖ 移除管理员 {admin_id}", f"admin_remove:{admin_id}")])
+    for operator_id in config.operators or []:
+        rows.append([(f"➖ 移除次级管理员 {operator_id}", f"operator_remove:{operator_id}")])
+    rows.append([("🛠️ 高级模式：设置管理员", "set_admins"), ("🛠️ 高级模式：设置次级管理员", "set_operators")])
+    rows.append([("🔙 返回", "back_config")])
+    await editMessage(call, text, buttons=ikb(rows))
+
+
+@bot.on_callback_query(filters.regex(r"^admin_add_page:") & admins_on_filter)
+async def admin_add_page(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    page = int(call.data.split(":")[1])
+    members = await get_users()
+    candidates = [
+        (tgid, name)
+        for tgid, name in members.items()
+        if tgid not in (config.admins or []) and tgid != config.owner
+    ]
+    candidates.sort(key=lambda item: (item[1] or "", item[0]))
+    if not candidates:
+        return await editMessage(call, "暂无可添加的管理员用户。", buttons=ikb([[("🔙 返回", "admin_list")]]))
+    text = "**➕ 选择要添加的管理员**\n\n" + _format_admin_lines()
+    buttons = _member_select_buttons(candidates, "admin_add", page, "admin_list")
+    await editMessage(call, text, buttons=buttons)
+
+
+@bot.on_callback_query(filters.regex(r"^operator_add_page:") & admins_on_filter)
+async def operator_add_page(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    page = int(call.data.split(":")[1])
+    members = await get_users()
+    candidates = [
+        (tgid, name)
+        for tgid, name in members.items()
+        if tgid not in (config.operators or []) and tgid != config.owner
+    ]
+    candidates.sort(key=lambda item: (item[1] or "", item[0]))
+    if not candidates:
+        return await editMessage(call, "暂无可添加的次级管理员用户。", buttons=ikb([[("🔙 返回", "admin_list")]]))
+    text = "**➕ 选择要添加的次级管理员**\n\n" + _format_admin_lines()
+    buttons = _member_select_buttons(candidates, "operator_add", page, "admin_list")
+    await editMessage(call, text, buttons=buttons)
+
+
+@bot.on_callback_query(filters.regex(r"^admin_add:") & admins_on_filter)
+async def admin_add(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    tgid = int(call.data.split(":")[1])
+    if tgid == config.owner:
+        return await callAnswer(call, "❌ 不能添加所有者。", True)
+    if config.admins is None:
+        config.admins = []
+    if tgid not in config.admins:
+        config.admins.append(tgid)
+        save_config()
+    await admin_list(_, call)
+
+
+@bot.on_callback_query(filters.regex(r"^admin_remove:") & admins_on_filter)
+async def admin_remove(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    tgid = int(call.data.split(":")[1])
+    if tgid == config.owner:
+        return await callAnswer(call, "❌ 不能移除所有者。", True)
+    if config.admins is None:
+        config.admins = []
+    if tgid in config.admins:
+        config.admins.remove(tgid)
+        save_config()
+    await admin_list(_, call)
+
+
+@bot.on_callback_query(filters.regex(r"^operator_add:") & admins_on_filter)
+async def operator_add(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    tgid = int(call.data.split(":")[1])
+    if tgid == config.owner:
+        return await callAnswer(call, "❌ 不能添加所有者。", True)
+    if config.operators is None:
+        config.operators = []
+    if tgid not in config.operators:
+        config.operators.append(tgid)
+        save_config()
+    await admin_list(_, call)
+
+
+@bot.on_callback_query(filters.regex(r"^operator_remove:") & admins_on_filter)
+async def operator_remove(_, call):
+    if not await _ensure_perm(call, "config_advanced"):
+        return
+    tgid = int(call.data.split(":")[1])
+    if tgid == config.owner:
+        return await callAnswer(call, "❌ 不能移除所有者。", True)
+    if config.operators is None:
+        config.operators = []
+    if tgid in config.operators:
+        config.operators.remove(tgid)
+        save_config()
+    await admin_list(_, call)
 
 
 @bot.on_callback_query(filters.regex("package_panel") & admins_on_filter)
