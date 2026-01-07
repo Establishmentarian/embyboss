@@ -90,7 +90,7 @@ async def pwd_create(length=8, chars=string.ascii_letters + string.digits):
 
 
 # 创建注册
-async def cr_link_one(tg: int, times, count, days: int, method: str):
+async def cr_link_one(tg: int, times, count, days: int, method: str, package_key: str = None):
     """
     创建连接
     :param tg:
@@ -119,13 +119,13 @@ async def cr_link_one(tg: int, times, count, days: int, method: str):
             link = f't.me/{bot_name}?start={uid}\n'
             links += link
             i += 1
-    if sql_add_code(code_list, tg, days) is False:
+    if sql_add_code(code_list, tg, days, package_key=package_key) is False:
         return None
     return links
 
 
 # 创建续期
-async def rn_link_one(tg: int, times, count, days: int, method: str):
+async def rn_link_one(tg: int, times, count, days: int, method: str, package_key: str = None):
     """
     创建连接
     :param tg:
@@ -154,7 +154,7 @@ async def rn_link_one(tg: int, times, count, days: int, method: str):
             link = f't.me/{bot_name}?start={uid}\n'
             links += link
             i += 1
-    if sql_add_code(code_list, tg, days) is False:
+    if sql_add_code(code_list, tg, days, package_key=package_key) is False:
         return None
     return links
 
@@ -208,6 +208,8 @@ def convert_to_beijing_time(original_date):
 async def get_users():
     # 创建一个空字典来存储用户的 first_name 和 id
     members_dict = {}
+    if not group:
+        return members_dict
     async for member in bot.get_chat_members(group[0]):
         try:
             members_dict[member.user.id] = member.user.first_name

@@ -50,42 +50,56 @@ emby_line = config.emby_line
 emby_whitelist_line = config.emby_whitelist_line
 emby_block = config.emby_block
 extra_emby_libs = config.extra_emby_libs
-packages = config.packages or {}
-if not packages:
-    packages = {
-        "default": EmbyPackage(
-            emby_api=emby_api,
-            emby_url=emby_url,
-            emby_line=emby_line,
-            emby_whitelist_line=emby_whitelist_line,
-            db_host=db_host,
-            db_user=db_user,
-            db_pwd=db_pwd,
-            db_name=db_name,
-            db_port=db_port,
-        )
+
+
+def reload_packages():
+    global packages, default_package, package_by_level
+    packages = config.packages or {}
+    if not packages:
+        packages = {
+            "default": EmbyPackage(
+                emby_api=emby_api,
+                emby_url=emby_url,
+                emby_line=emby_line,
+                emby_whitelist_line=emby_whitelist_line,
+                db_host=db_host,
+                db_user=db_user,
+                db_pwd=db_pwd,
+                db_name=db_name,
+                db_port=db_port,
+            )
+        }
+    else:
+        for package in packages.values():
+            if package.db_host is None:
+                package.db_host = db_host
+            if package.db_user is None:
+                package.db_user = db_user
+            if package.db_pwd is None:
+                package.db_pwd = db_pwd
+            if package.db_name is None:
+                package.db_name = db_name
+            if package.db_port is None:
+                package.db_port = db_port
+    default_package = config.default_package or next(iter(packages))
+    if default_package not in packages:
+        default_package = next(iter(packages))
+    package_by_level = config.package_by_level or {
+        "a": default_package,
+        "b": default_package,
+        "c": default_package,
+        "d": default_package,
     }
-else:
-    for package in packages.values():
-        if package.db_host is None:
-            package.db_host = db_host
-        if package.db_user is None:
-            package.db_user = db_user
-        if package.db_pwd is None:
-            package.db_pwd = db_pwd
-        if package.db_name is None:
-            package.db_name = db_name
-        if package.db_port is None:
-            package.db_port = db_port
-default_package = config.default_package or next(iter(packages))
-if default_package not in packages:
-    default_package = next(iter(packages))
-package_by_level = config.package_by_level or {
-    "a": default_package,
-    "b": default_package,
-    "c": default_package,
-    "d": default_package,
-}
+    try:
+        from bot.sql_helper import reset_engines
+
+        reset_engines()
+    except Exception as exc:
+        LOGGER.warning(f"刷新套餐引擎失败: {exc}")
+    return packages
+
+
+packages = reload_packages()
 # 探针
 tz_ad = config.tz_ad
 tz_api = config.tz_api

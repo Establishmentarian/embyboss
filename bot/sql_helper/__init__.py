@@ -24,7 +24,7 @@ def _build_engine(package_key: str):
     db_name = package.db_name
     db_port = package.db_port
     return create_engine(
-        f"mysql+pymysql://{db_user}:{db_pwd}@{db_host}:{db_port}/{db_name}?utf8mb4",
+        f"mysql+pymysql://{db_user}:{db_pwd}@{db_host}:{db_port}/{db_name}?charset=utf8mb4",
         echo=False,
         echo_pool=False,
         pool_size=16,
@@ -60,8 +60,15 @@ def package_keys():
     return list(packages.keys())
 
 
+def reset_engines():
+    for engine in _engines.values():
+        dispose = getattr(engine, "dispose", None)
+        if callable(dispose):
+            dispose()
+    _engines.clear()
+
+
 def Session(package_key: Optional[str] = None):
     key = package_key or current_package_key()
     engine = _ensure_engine(key)
     return sessionmaker(bind=engine, autoflush=False)()
-

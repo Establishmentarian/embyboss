@@ -245,11 +245,11 @@ async def store_query_page(total_page: int, current_page: int) -> InlineKeyboard
     keyboard.row(*followUp)
     return keyboard
 
-async def whitelist_page_ikb(total_page: int, current_page: int) -> InlineKeyboardMarkup:
+async def whitelist_page_ikb(total_page: int, current_page: int, package_key: str) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboard()
-    keyboard.paginate(total_page, current_page, 'whitelist:{number}')
-    next = InlineButton('⏭️ 后退+5', f'whitelist:{current_page + 5}')
-    previous = InlineButton('⏮️ 前进-5', f'whitelist:{current_page - 5}')
+    keyboard.paginate(total_page, current_page, f'whitelist:{{number}}:{package_key}')
+    next = InlineButton('⏭️ 后退+5', f'whitelist:{current_page + 5}:{package_key}')
+    previous = InlineButton('⏮️ 前进-5', f'whitelist:{current_page - 5}:{package_key}')
     followUp = [InlineButton('🔙 Back', 'manage')]
     if total_page > 5:
         if current_page - 5 >= 1:
@@ -258,11 +258,11 @@ async def whitelist_page_ikb(total_page: int, current_page: int) -> InlineKeyboa
             followUp.append(next)
     keyboard.row(*followUp)
     return keyboard
-async def normaluser_page_ikb(total_page: int, current_page: int) -> InlineKeyboardMarkup:
+async def normaluser_page_ikb(total_page: int, current_page: int, package_key: str) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboard()
-    keyboard.paginate(total_page, current_page, 'normaluser:{number}')
-    next = InlineButton('⏭️ 后退+5', f'normaluser:{current_page + 5}')
-    previous = InlineButton('⏮️ 前进-5', f'normaluser:{current_page - 5}')
+    keyboard.paginate(total_page, current_page, f'normaluser:{{number}}:{package_key}')
+    next = InlineButton('⏭️ 后退+5', f'normaluser:{current_page + 5}:{package_key}')
+    previous = InlineButton('⏮️ 前进-5', f'normaluser:{current_page - 5}:{package_key}')
     followUp = [InlineButton('🔙 Back', 'manage')]
     if total_page > 5:
         if current_page - 5 >= 1:
@@ -271,16 +271,16 @@ async def normaluser_page_ikb(total_page: int, current_page: int) -> InlineKeybo
             followUp.append(next)
     keyboard.row(*followUp)
     return keyboard
-def devices_page_ikb( has_prev: bool, has_next: bool, page: int) -> InlineKeyboardMarkup:
+def devices_page_ikb(has_prev: bool, has_next: bool, page: int, package_key: str) -> InlineKeyboardMarkup:
     # 构建分页按钮
     buttons = []
     if has_prev or has_next:
         nav_buttons = []
         if has_prev:
-            nav_buttons.append(('⬅️', f'devices:{page-1}'))
+            nav_buttons.append(('⬅️', f'devices:{page-1}:{package_key}'))
         nav_buttons.append((f'第 {page} 页', 'none'))
         if has_next:
-            nav_buttons.append(('➡️', f'devices:{page+1}'))
+            nav_buttons.append(('➡️', f'devices:{page+1}:{package_key}'))
         buttons.append(nav_buttons)
     # 添加返回按钮
     buttons.append([('🔙 返回', 'manage')])

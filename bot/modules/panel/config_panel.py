@@ -4,7 +4,7 @@
 部分目前有 导出日志，更改探针，更改emby线路，设置购买按钮
 
 """
-from bot import bot, prefixes, bot_photo, Now, LOGGER, config, save_config, _open, auto_update, moviepilot, sakura_b
+from bot import bot, prefixes, bot_photo, Now, LOGGER, config, save_config, _open, auto_update, moviepilot, sakura_b, reload_packages
 from pyrogram import filters
 
 from bot.func_helper.filters import admins_on_filter
@@ -765,6 +765,7 @@ async def package_add(_, call):
         db_port=config.db_port,
     )
     save_config()
+    reload_packages()
     await editMessage(call, f"✅ 已创建套餐 `{name}`。", buttons=_package_edit_buttons(name))
 
 
@@ -819,6 +820,7 @@ async def package_set(_, call):
         setattr(package, field, value)
         config.packages[package_key] = package
         save_config()
+        reload_packages()
     except Exception as exc:
         return await editMessage(call, f"❌ 更新失败：{exc}", buttons=_package_edit_buttons(package_key))
     await package_edit(_, call)
@@ -833,6 +835,7 @@ async def package_default(_, call):
         return await editMessage(call, "❌ 未找到套餐。", buttons=_package_panel_buttons())
     config.default_package = package_key
     save_config()
+    reload_packages()
     await editMessage(call, f"✅ 已设置默认套餐为 `{package_key}`。", buttons=_package_edit_buttons(package_key))
 
 
@@ -847,4 +850,5 @@ async def package_delete(_, call):
         return await editMessage(call, "⚠️ 默认套餐不能删除。", buttons=_package_edit_buttons(package_key))
     del config.packages[package_key]
     save_config()
+    reload_packages()
     await editMessage(call, f"✅ 已删除套餐 `{package_key}`。", buttons=_package_panel_buttons())

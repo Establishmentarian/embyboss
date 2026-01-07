@@ -34,9 +34,9 @@ for _package_key in package_keys():
     Code.__table__.create(bind=get_engine(_package_key), checkfirst=True)
 
 
-def sql_add_code(code_list: list, tg: int, us: int):
+def sql_add_code(code_list: list, tg: int, us: int, package_key: str = None):
     """批量添加记录，如果code已存在则忽略"""
-    with Session() as session:
+    with Session(package_key) as session:
         try:
             code_list = [Code(code=c, tg=tg, us=us) for c in code_list]
             session.add_all(code_list)
