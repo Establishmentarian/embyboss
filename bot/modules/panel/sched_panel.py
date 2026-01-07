@@ -8,6 +8,7 @@ from pyrogram.types import Message
 from bot import bot, sakura_b, schedall, save_config, prefixes, _open, owner, LOGGER, auto_update, group
 from bot.func_helper.filters import admins_on_filter, user_in_group_on_filter
 from bot.func_helper.fix_bottons import sched_buttons, plays_list_button
+from bot.func_helper.package_utils import select_package, resolve_package_key
 from bot.func_helper.msg_utils import callAnswer, editMessage, deleteMessage
 from bot.func_helper.scheduler import scheduler
 from bot.scheduler import *
@@ -64,29 +65,43 @@ def set_all_sche():
 set_all_sche()
 
 
-async def sched_panel(_, msg):
+async def sched_panel(_, msg, package_key: str):
     # await deleteMessage(msg)
     await editMessage(msg,
                       text=f'🎮 **管理定时任务面板**\n\n',
-                      buttons=sched_buttons())
+                      buttons=sched_buttons(package_key))
 
 
-@bot.on_callback_query(filters.regex('sched') & admins_on_filter)
+@bot.on_callback_query(filters.regex('^panel:schedall:') & admins_on_filter)
+async def sched_open(_, call):
+    package_key, buttons = select_package(call.data.split(":")[-1], prefix="panel:schedall", back_callback="manage")
+    if package_key is None:
+        await callAnswer(call, "📦 请选择套餐", True)
+        return await editMessage(call, "📦 请选择要管理定时任务的套餐：", buttons=buttons)
+    await sched_panel(_, call.message, package_key)
+
+
+@bot.on_callback_query(filters.regex('^panel:sched:') & admins_on_filter)
 async def sched_change_policy(_, call):
     try:
-        method = call.data.split('-')[1]
+        parts = call.data.split(":")
+        method = parts[2] if len(parts) >= 4 else None
+        package_key = resolve_package_key(parts[-1]) if len(parts) >= 3 else resolve_package_key(None)
         # 根据method的值来添加或移除相应的任务
-        action = action_dict[method]
-        args = args_dict[method]
-        if getattr(schedall, method):
-            scheduler.remove_job(job_id=args['id'], jobstore='default')
+        if method:
+            action = action_dict[method]
+            args = args_dict[method]
+            if getattr(schedall, method):
+                scheduler.remove_job(job_id=args['id'], jobstore='default')
+            else:
+                scheduler.add_job(action, 'cron', **args)
+            setattr(schedall, method, not getattr(schedall, method))
+            save_config()
+            await asyncio.gather(callAnswer(call, f'⭕️ {method} 更改成功'), sched_panel(_, call.message, package_key))
         else:
-            scheduler.add_job(action, 'cron', **args)
-        setattr(schedall, method, not getattr(schedall, method))
-        save_config()
-        await asyncio.gather(callAnswer(call, f'⭕️ {method} 更改成功'), sched_panel(_, call.message))
+            await sched_panel(_, call.message, package_key)
     except IndexError:
-        await sched_panel(_, call.message)
+        await sched_panel(_, call.message, resolve_package_key(call.data.split(":")[-1]))
 
 
 @bot.on_message(filters.command('check_ex', prefixes) & admins_on_filter)

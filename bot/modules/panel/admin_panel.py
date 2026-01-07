@@ -6,7 +6,7 @@ import asyncio
 
 from pyrogram import filters
 
-from bot import bot, _open, save_config, bot_photo, LOGGER, bot_name, admins, owner, config, packages, default_package
+from bot import bot, _open, save_config, bot_photo, LOGGER, bot_name, admins, owner, config, default_package
 from bot.func_helper.filters import staff_on_filter
 from bot.schemas import ExDate
 from bot.sql_helper.sql_code import sql_count_code, sql_count_p_code, sql_delete_all_unused, sql_delete_unused_by_days
@@ -16,7 +16,7 @@ from bot.func_helper.fix_bottons import gm_ikb_content, open_menu_ikb, gog_reste
 from bot.func_helper.msg_utils import callAnswer, editMessage, sendPhoto, callListen, deleteMessage, sendMessage
 from bot.func_helper.utils import open_check, cr_link_one, rn_link_one
 from bot.func_helper.permissions import has_permission
-from pyromod.helpers import ikb
+from bot.func_helper.package_utils import select_package, resolve_package_key
 
 
 async def _require_perm(call, perm: str) -> bool:
@@ -26,16 +26,14 @@ async def _require_perm(call, perm: str) -> bool:
     return True
 
 
-def _package_select_buttons(prefix: str):
-    rows = [[(f"📦 {key}", f"{prefix}:{key}")] for key in packages.keys()]
-    rows.append([("🔙 返回", "manage")])
-    return ikb(rows)
-
-
-def _resolve_package_key(package_key: str):
-    if package_key in packages:
-        return package_key
-    return default_package
+async def _select_panel_package(call, action_label: str, prefix: str):
+    raw_key = call.data.split(":")[-1] if ":" in call.data else None
+    package_key, buttons = select_package(raw_key, prefix=prefix, back_callback="manage")
+    if package_key is None:
+        await callAnswer(call, "📦 请选择套餐", True)
+        await editMessage(call, f"📦 请选择{action_label}的套餐：", buttons=buttons)
+        return None
+    return package_key
 
 
 async def _handle_cr_link(call, package_key: str):
@@ -50,50 +48,49 @@ async def _handle_cr_link(call, package_key: str):
     if send is False:
         return
 
-    content = await callListen(call, 120, buttons=re_cr_link_ikb)
+    content = await callListen(call, 120, buttons=re_cr_link_ikb(package_key))
     if content is False:
         return
     elif content.text == '/cancel':
         await content.delete()
-        return await editMessage(call, '⭕ 您已经取消操作了。', buttons=re_cr_link_ikb)
+        return await editMessage(call, '⭕ 您已经取消操作了。', buttons=re_cr_link_ikb(package_key))
     try:
         await content.delete()
         times, count, method, renew = content.text.split()
         count = int(count)
         days = int(times)
         if method != 'code' and method != 'link':
-            return editMessage(call, '⭕ 输入的method参数有误', buttons=re_cr_link_ikb)
+            return editMessage(call, '⭕ 输入的method参数有误', buttons=re_cr_link_ikb(package_key))
     except (ValueError, IndexError):
-        return await editMessage(call, '⚠️ 检查输入，有误。', buttons=re_cr_link_ikb)
+        return await editMessage(call, '⚠️ 检查输入，有误。', buttons=re_cr_link_ikb(package_key))
     else:
         if renew == 'F':
             links = await cr_link_one(call.from_user.id, times, count, days, method, package_key=package_key)
             if links is None:
-                return await editMessage(call, '⚠️ 数据库插入失败，请检查数据库。', buttons=re_cr_link_ikb)
+                return await editMessage(call, '⚠️ 数据库插入失败，请检查数据库。', buttons=re_cr_link_ikb(package_key))
             links = f"🎯 {bot_name}已为您生成了 **{days}天** 注册码 {count} 个\n\n" + links
             chunks = [links[i:i + 4096] for i in range(0, len(links), 4096)]
             for chunk in chunks:
                 await sendMessage(content, chunk, buttons=close_it_ikb)
-            await editMessage(call, f'📂 {bot_name}已为 您 生成了 {count} 个 {days} 天注册码', buttons=re_cr_link_ikb)
+            await editMessage(call, f'📂 {bot_name}已为 您 生成了 {count} 个 {days} 天注册码', buttons=re_cr_link_ikb(package_key))
             LOGGER.info(f"【admin】：{bot_name}已为 {content.from_user.id} 生成了 {count} 个 {days} 天注册码")
 
         else:
             links = await rn_link_one(call.from_user.id, times, count, days, method, package_key=package_key)
             if links is None:
-                return await editMessage(call, '⚠️ 数据库插入失败，请检查数据库。', buttons=re_cr_link_ikb)
+                return await editMessage(call, '⚠️ 数据库插入失败，请检查数据库。', buttons=re_cr_link_ikb(package_key))
             links = f"🎯 {bot_name}已为您生成了 **{days}天** 续期码 {count} 个\n\n" + links
             chunks = [links[i:i + 4096] for i in range(0, len(links), 4096)]
             for chunk in chunks:
                 await sendMessage(content, chunk, buttons=close_it_ikb)
-            await editMessage(call, f'📂 {bot_name}已为 您 生成了 {count} 个 {days} 天续期码', buttons=re_cr_link_ikb)
+            await editMessage(call, f'📂 {bot_name}已为 您 生成了 {count} 个 {days} 天续期码', buttons=re_cr_link_ikb(package_key))
             LOGGER.info(f"【admin】：{bot_name}已为 {content.from_user.id} 生成了 {count} 个 {days} 天续期码")
 
 
-@bot.on_callback_query(filters.regex('manage') & staff_on_filter)
-async def gm_ikb(_, call):
+async def _render_manage_panel(call, package_key: str):
     if not await _require_perm(call, "view_users"):
         return
-    await callAnswer(call, '✔️ manage面板')
+    await callAnswer(call, f'✔️ manage面板 - {package_key}')
     stat, all_user, tem, timing = await open_check()
     stat = "True" if stat else "False"
     timing = 'Turn off' if timing == 0 else str(timing) + ' min'
@@ -105,13 +102,31 @@ async def gm_ikb(_, call):
               f'· 🎟️ 已注册人数 | **{emby}** • WL **{white}**\n' \
               f'· 🤖 bot使用人数 | {tg}'
 
-    await editMessage(call, gm_text, buttons=gm_ikb_content)
+    await editMessage(call, gm_text, buttons=gm_ikb_content(package_key))
+
+
+@bot.on_callback_query(filters.regex('^manage$') & staff_on_filter)
+async def gm_ikb(_, call):
+    package_key, buttons = select_package(prefix="manage_pkg", back_callback="back_start")
+    if package_key is None:
+        await callAnswer(call, "📦 请选择套餐", True)
+        return await editMessage(call, "📦 请选择要管理的套餐：", buttons=buttons)
+    await _render_manage_panel(call, package_key)
+
+
+@bot.on_callback_query(filters.regex('^manage_pkg:') & staff_on_filter)
+async def manage_pkg(_, call):
+    package_key = resolve_package_key(call.data.split(":", 1)[1])
+    await _render_manage_panel(call, package_key)
 
 
 # 开关注册
-@bot.on_callback_query(filters.regex('open-menu') & staff_on_filter)
+@bot.on_callback_query(filters.regex('^panel:open-menu:') & staff_on_filter)
 async def open_menu(_, call):
     if not await _require_perm(call, "open_registration"):
+        return
+    package_key = await _select_panel_package(call, "注册状态", "panel:open-menu")
+    if not package_key:
         return
     await callAnswer(call, '®️ register面板')
     # [开关，注册总数，定时注册] 此间只对emby表中tg用户进行统计
@@ -121,15 +136,18 @@ async def open_menu(_, call):
     timingstats = '❎' if timing == 0 else '✅'
     text = f'⚙ **注册状态设置**：\n\n- 自由注册即定量方式，定时注册既定时又定量，将自动转发消息至群组，再次点击按钮可提前结束并报告。\n' \
            f'- **注册总人数限制 {all_user}**'
-    await editMessage(call, text, buttons=open_menu_ikb(openstats, timingstats))
+    await editMessage(call, text, buttons=open_menu_ikb(openstats, timingstats, package_key))
     if tem != emby:
         _open.tem = emby
         save_config()
 
 
-@bot.on_callback_query(filters.regex('open_stat') & staff_on_filter)
+@bot.on_callback_query(filters.regex('^panel:open_stat:') & staff_on_filter)
 async def open_stats(_, call):
     if not await _require_perm(call, "open_registration"):
+        return
+    package_key = await _select_panel_package(call, "注册状态", "panel:open_stat")
+    if not package_key:
         return
     stat, all_user, tem, timing = await open_check()
     if timing != 0:
@@ -145,7 +163,7 @@ async def open_stats(_, call):
                f'🎫 总注册限制 | {all_user}\n🎟️ 已注册人数 | {tem}\n' \
                f'🎭 剩余可注册 | **{sur}**\n🤖 bot使用人数 | {tg}'
         await asyncio.gather(sendPhoto(call, photo=bot_photo, caption=text, send=True),
-                             editMessage(call, text, buttons=back_free_ikb))
+                             editMessage(call, text, buttons=back_free_ikb(package_key)))
         # await open_menu(_, call)
         LOGGER.info(f"【admin】：管理员 {call.from_user.first_name} 关闭了自由注册")
     elif not stat:
@@ -157,7 +175,7 @@ async def open_stats(_, call):
                f'🎫 总注册限制 | {all_user}\n🎟️ 已注册人数 | {tem}\n' \
                f'🎭 剩余可注册 | **{sur}**\n🤖 bot使用人数 | {tg}'
         await asyncio.gather(sendPhoto(call, photo=bot_photo, caption=text, buttons=gog_rester_ikb(), send=True),
-                             editMessage(call, text=text, buttons=back_free_ikb))
+                             editMessage(call, text=text, buttons=back_free_ikb(package_key)))
         # await open_menu(_, call)
         LOGGER.info(f"【admin】：管理员 {call.from_user.first_name} 开启了自由注册，总人数限制 {all_user}")
 
@@ -165,9 +183,12 @@ async def open_stats(_, call):
 change_for_timing_task = None
 
 
-@bot.on_callback_query(filters.regex('open_timing') & staff_on_filter)
+@bot.on_callback_query(filters.regex('^panel:open_timing:') & staff_on_filter)
 async def open_timing(_, call):
     if not await _require_perm(call, "open_registration"):
+        return
+    package_key = await _select_panel_package(call, "定时注册", "panel:open_timing")
+    if not package_key:
         return
     global change_for_timing_task
     if _open.timing == 0:
@@ -178,7 +199,7 @@ async def open_timing(_, call):
                           "- 如需要关闭定时注册，再次点击【定时注册】\n"
                           "- 设置好之后将发送置顶消息注意权限\n- 退出 /cancel")
 
-        txt = await callListen(call, 120, buttons=back_open_menu_ikb)
+        txt = await callListen(call, 120, buttons=back_open_menu_ikb(package_key))
         if txt is False:
             return
 
@@ -193,7 +214,7 @@ async def open_timing(_, call):
             _open.stat = True
             save_config()
         except ValueError:
-            await editMessage(call, "🚫 请检查数字填写是否正确。\n`[时长min] [总人数]`", buttons=back_open_menu_ikb)
+            await editMessage(call, "🚫 请检查数字填写是否正确。\n`[时长min] [总人数]`", buttons=back_open_menu_ikb(package_key))
         else:
             tg, emby, white = sql_count_emby()
             sur = _open.all_user - emby
@@ -205,7 +226,7 @@ async def open_timing(_, call):
                                            buttons=gog_rester_ikb(), send=True),
                                  editMessage(call,
                                              f"®️ 好，已设置**定时注册 {_open.timing} min 总限额 {_open.all_user}**",
-                                             buttons=back_free_ikb))
+                                             buttons=back_free_ikb(package_key)))
             LOGGER.info(
                 f"【admin】-定时注册：管理员 {call.from_user.first_name} 开启了定时注册 {_open.timing} min，人数限制 {sur}")
             # 创建一个异步任务并保存为变量，并给它一个名字
@@ -247,9 +268,12 @@ async def change_for_timing(timing, tgid, call):
         await deleteMessage(send1, 30)
 
 
-@bot.on_callback_query(filters.regex('all_user_limit') & staff_on_filter)
+@bot.on_callback_query(filters.regex('^panel:all_user_limit:') & staff_on_filter)
 async def open_all_user_l(_, call):
     if not await _require_perm(call, "open_registration"):
+        return
+    package_key = await _select_panel_package(call, "注册限制", "panel:all_user_limit")
+    if not package_key:
         return
     await callAnswer(call, '⭕ 限制人数')
     send = await call.message.edit(
@@ -257,7 +281,7 @@ async def open_all_user_l(_, call):
     if send is False:
         return
 
-    txt = await callListen(call, 120, buttons=back_free_ikb)
+    txt = await callListen(call, 120, buttons=back_free_ikb(package_key))
     if txt is False:
         return
     elif txt.text == "/cancel":
@@ -268,15 +292,19 @@ async def open_all_user_l(_, call):
         await txt.delete()
         a = int(txt.text)
     except ValueError:
-        await editMessage(call, f"❌ 八嘎，请输入一个数字给我。", buttons=back_free_ikb)
+        await editMessage(call, f"❌ 八嘎，请输入一个数字给我。", buttons=back_free_ikb(package_key))
     else:
         _open.all_user = a
         save_config()
-        await editMessage(call, f"✔️ 成功，您已设置 **注册总人数 {a}**", buttons=back_free_ikb)
+        await editMessage(call, f"✔️ 成功，您已设置 **注册总人数 {a}**", buttons=back_free_ikb(package_key))
         LOGGER.info(f"【admin】：管理员 {call.from_user.first_name} 调整了总人数限制：{a}")
-@bot.on_callback_query(filters.regex('open_us') & staff_on_filter)
+
+@bot.on_callback_query(filters.regex('^panel:open_us:') & staff_on_filter)
 async def open_us(_, call):
     if not await _require_perm(call, "open_registration"):
+        return
+    package_key = await _select_panel_package(call, "注册天数", "panel:open_us")
+    if not package_key:
         return
     await callAnswer(call, '🤖开放账号天数')
     send = await call.message.edit(
@@ -284,7 +312,7 @@ async def open_us(_, call):
     if send is False:
         return
 
-    txt = await callListen(call, 120, buttons=back_free_ikb)
+    txt = await callListen(call, 120, buttons=back_free_ikb(package_key))
     if txt is False:
         return
     elif txt.text == "/cancel":
@@ -295,36 +323,31 @@ async def open_us(_, call):
         await txt.delete()
         a = int(txt.text)
     except ValueError:
-        await editMessage(call, f"❌ 八嘎，请输入一个数字给我。", buttons=back_free_ikb)
+        await editMessage(call, f"❌ 八嘎，请输入一个数字给我。", buttons=back_free_ikb(package_key))
     else:
         _open.open_us = a
         save_config()
-        await editMessage(call, f"✔️ 成功，您已设置 **开放注册时账号的有效天数 {a}**", buttons=back_free_ikb)
+        await editMessage(call, f"✔️ 成功，您已设置 **开放注册时账号的有效天数 {a}**", buttons=back_free_ikb(package_key))
         LOGGER.info(f"【admin】：管理员 {call.from_user.first_name} 调整了开放注册时账号的有效天数：{a}")
 
 # 生成注册链接
-@bot.on_callback_query(filters.regex('cr_link') & staff_on_filter)
+@bot.on_callback_query(filters.regex('^panel:cr_link:') & staff_on_filter)
 async def cr_link(_, call):
     if not await _require_perm(call, "manage_codes"):
         return
-    if len(packages) > 1:
-        await callAnswer(call, "📦 请选择套餐", True)
-        return await editMessage(call, "📦 请选择要生成码的套餐：", buttons=_package_select_buttons("cr_link_pkg"))
-    await _handle_cr_link(call, default_package)
-
-
-@bot.on_callback_query(filters.regex('^cr_link_pkg:') & staff_on_filter)
-async def cr_link_by_package(_, call):
-    if not await _require_perm(call, "manage_codes"):
+    package_key = await _select_panel_package(call, "生成码", "panel:cr_link")
+    if not package_key:
         return
-    package_key = _resolve_package_key(call.data.split(":", 1)[1])
     await _handle_cr_link(call, package_key)
 
 
 # 检索
-@bot.on_callback_query(filters.regex('ch_link') & staff_on_filter)
+@bot.on_callback_query(filters.regex('^panel:ch_link:') & staff_on_filter)
 async def ch_link(_, call):
     if not await _require_perm(call, "manage_codes"):
+        return
+    package_key = await _select_panel_package(call, "注册码查询", "panel:ch_link")
+    if not package_key:
         return
     await callAnswer(call, '🔍 查看管理们注册码...时长会久一点', True)
     a, b, c, d, f, e = sql_count_code()
@@ -335,11 +358,11 @@ async def ch_link(_, call):
         name = await bot.get_chat(i)
         a, b, c, d, f ,e= sql_count_code(i)
         text += f'\n👮🏻`{name.first_name}`: 月/{b}，季/{c}，半年/{d}，年/{f}，已用/{a}，未用/{e}'
-        f = [f"🔎 {name.first_name}", f"ch_admin_link-{i}"]
+        f = [f"🔎 {name.first_name}", f"ch_admin_link-{i}:{package_key}"]
         ls.append(f)
-    ls.append(["🚮 删除未使用码", f"delete_codes"])
+    ls.append(["🚮 删除未使用码", f"delete_codes:{package_key}"])
     admins.remove(owner)
-    keyboard = ch_link_ikb(ls)
+    keyboard = ch_link_ikb(ls, package_key)
     text += '\n详情查询 👇'
 
     await editMessage(call, text, buttons=keyboard)
@@ -379,8 +402,9 @@ async def delete_unused_codes(_, call):
         text = "❌ 输入格式错误"
     
     ls=[]
-    ls.append(["🔄 继续删除", f"delete_codes"])
-    keyboard = ch_link_ikb(ls)
+    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else default_package
+    ls.append(["🔄 继续删除", f"delete_codes:{package_key}"])
+    keyboard = ch_link_ikb(ls, package_key)
     await editMessage(call, text, buttons=keyboard)
 
 
@@ -388,7 +412,8 @@ async def delete_unused_codes(_, call):
 async def ch_admin_link(client, call):
     if not await _require_perm(call, "manage_codes"):
         return
-    i = int(call.data.split('-')[1])
+    base = call.data.split(":")[0]
+    i = int(base.split('-')[1])
     if call.from_user.id != owner and call.from_user.id != i:
         return await callAnswer(call, '🚫 你怎么偷窥别人呀! 你又不是owner', True)
     await callAnswer(call, f'💫 管理员 {i} 的注册码')
@@ -430,20 +455,27 @@ async def paginate_keyboard(_, call):
     await editMessage(call, f'🔎当前模式- **{mode}**天，检索出以下 **{b}**页链接：\n\n{text}', keyboard)
 
 
-@bot.on_callback_query(filters.regex('set_renew'))
+@bot.on_callback_query(filters.regex('^panel:set_renew:') & staff_on_filter)
 async def set_renew(_, call):
     if not await _require_perm(call, "manage_codes"):
         return
     await callAnswer(call, '🚀 进入续期设置')
+    parts = call.data.split(":")
+    package_key = parts[-1] if len(parts) >= 3 else None
+    package_key, buttons = select_package(package_key, prefix="panel:set_renew", back_callback="manage")
+    if package_key is None:
+        await callAnswer(call, "📦 请选择套餐", True)
+        return await editMessage(call, "📦 请选择要设置续期的套餐：", buttons=buttons)
+    method = parts[2] if len(parts) >= 4 else None
     try:
-        method = call.data.split('-')[1]
-        setattr(_open, method, not getattr(_open, method))
-        save_config()
+        if method:
+            setattr(_open, method, not getattr(_open, method))
+            save_config()
     except IndexError:
         pass
     finally:
         await editMessage(call, text='⭕ **关于用户组的续期功能**\n\n选择点击下方按钮开关任意兑换功能',
-                          buttons=cr_renew_ikb())
+                          buttons=cr_renew_ikb(package_key))
 @bot.on_callback_query(filters.regex('set_freeze_days') & staff_on_filter)
 async def set_freeze_days(_, call):
     if not await _require_perm(call, "config_basic"):
@@ -454,7 +486,8 @@ async def set_freeze_days(_, call):
     if send is False:
         return
 
-    txt = await callListen(call, 120, buttons=back_free_ikb)
+    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else default_package
+    txt = await callListen(call, 120, buttons=back_free_ikb(package_key))
     if txt is False:
         return
     elif txt.text == "/cancel":
@@ -465,22 +498,26 @@ async def set_freeze_days(_, call):
         await txt.delete()
         a = int(txt.text)
     except ValueError:
-        await editMessage(call, f"❌ 八嘎，请输入一个数字给我。", buttons=back_free_ikb)
+        await editMessage(call, f"❌ 八嘎，请输入一个数字给我。", buttons=back_free_ikb(package_key))
     else:
         config.freeze_days = a
         save_config()
-        await editMessage(call, f"✔️ 成功，您已设置 **封存账号天数 {a}**", buttons=back_free_ikb)
+        await editMessage(call, f"✔️ 成功，您已设置 **封存账号天数 {a}**", buttons=back_free_ikb(package_key))
         LOGGER.info(f"【admin】：管理员 {call.from_user.first_name} 调整了封存账号天数：{a}")
 
-@bot.on_callback_query(filters.regex('set_invite_lv'))
+@bot.on_callback_query(filters.regex('^panel:set_invite_lv:') & staff_on_filter)
 async def invite_lv_set(_, call):
     if not await _require_perm(call, "config_basic"):
         return
     try:
-        method = call.data
-        if method.startswith('set_invite_lv-'):
-            # 当选择具体等级时
-            level = method.split('-')[1]
+        parts = call.data.split(":")
+        package_key = parts[-1] if len(parts) >= 3 else None
+        package_key, buttons = select_package(package_key, prefix="panel:set_invite_lv", back_callback="manage")
+        if package_key is None:
+            await callAnswer(call, "📦 请选择套餐", True)
+            return await editMessage(call, "📦 请选择要设置邀请等级的套餐：", buttons=buttons)
+        if len(parts) >= 4:
+            level = parts[2]
             if level in ['a', 'b', 'c', 'd']:
                 _open.invite_lv = level
                 save_config()
@@ -494,19 +531,23 @@ async def invite_lv_set(_, call):
             "🅱️ - 普通用户及以上可使用\n" 
             "©️ - 已禁用用户及以上可使用\n"
             "🅳️ - 所有用户可使用",
-            buttons=invite_lv_ikb())
+            buttons=invite_lv_ikb(package_key))
         return
     except IndexError:
         pass
-@bot.on_callback_query(filters.regex('set_checkin_lv'))
+@bot.on_callback_query(filters.regex('^panel:set_checkin_lv:') & staff_on_filter)
 async def checkin_lv_set(_, call):
     if not await _require_perm(call, "config_basic"):
         return
     try:
-        method = call.data
-        if method.startswith('set_checkin_lv-'):
-            # 当选择具体等级时
-            level = method.split('-')[1]
+        parts = call.data.split(":")
+        package_key = parts[-1] if len(parts) >= 3 else None
+        package_key, buttons = select_package(package_key, prefix="panel:set_checkin_lv", back_callback="manage")
+        if package_key is None:
+            await callAnswer(call, "📦 请选择套餐", True)
+            return await editMessage(call, "📦 请选择要设置签到等级的套餐：", buttons=buttons)
+        if len(parts) >= 4:
+            level = parts[2]
             if level in ['a', 'b', 'c', 'd']:
                 _open.checkin_lv = level
                 save_config()
@@ -520,7 +561,7 @@ async def checkin_lv_set(_, call):
             "🅱️ - 普通用户及以上可签到\n" 
             "©️ - 已禁用用户及以上可签到\n"
             "🅳️ - 所有用户可签到",
-            buttons=checkin_lv_ikb())
+            buttons=checkin_lv_ikb(package_key))
         return
     except IndexError:
         pass
