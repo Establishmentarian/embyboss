@@ -1,4 +1,5 @@
 from cacheout import Cache
+from typing import Optional
 from pykeyboard import InlineKeyboard, InlineButton
 from pyrogram.types import InlineKeyboardMarkup
 from pyromod.helpers import ikb, array_chunk
@@ -68,7 +69,8 @@ def members_ikb(is_admin: bool = False, account: bool = False) -> InlineKeyboard
 
 back_start_ikb = ikb([[('💫 回到首页', 'back_start')]])
 back_members_ikb = ikb([[('💨 返回', 'members')]])
-back_manage_ikb = ikb([[('💨 返回', 'manage')]])
+def back_manage_ikb(package_key: str) -> InlineKeyboardMarkup:
+    return ikb([[('💨 返回', f'manage_pkg:{package_key}')]])
 re_create_ikb = ikb([[('🍥 重新输入', 'create'), ('💫 用户主页', 'members')]])
 re_changetg_ikb = ikb([[('✨ 换绑TG', 'changetg'), ('💫 用户主页', 'members')]])
 re_bindtg_ikb = ikb([[('✨ 绑定TG', 'bindtg'), ('💫 用户主页', 'members')]])
@@ -131,26 +133,37 @@ async def cr_page_server():
 
 """admins ↓"""
 
-gm_ikb_content = ikb([[('⭕ 注册状态', 'open-menu'), ('🎟️ 注册/续期码', 'cr_link')],
-                      [('💊 查询注册', 'ch_link'), ('🏬 兑换设置', 'set_renew')],
-                      [('👥 用户列表', 'normaluser'), ('👑 白名单列表', 'whitelist'), ('💠 设备列表', 'user_devices')],
-                      [('🌏 定时', 'schedall'), ('🕹️ 主界面', 'back_start'), ('其他 🪟', 'back_config')]])
+def gm_ikb_content(package_key: str) -> InlineKeyboardMarkup:
+    return ikb([[('⭕ 注册状态', f'panel:open-menu:{package_key}'), ('🎟️ 注册/续期码', f'panel:cr_link:{package_key}')],
+                [('💊 查询注册', f'panel:ch_link:{package_key}'), ('🏬 兑换设置', f'panel:set_renew:{package_key}')],
+                [('👥 用户列表', f'panel:normaluser:{package_key}'), ('👑 白名单列表', f'panel:whitelist:{package_key}'), ('💠 设备列表', f'panel:user_devices:{package_key}')],
+                [('🌏 定时', f'panel:schedall:{package_key}'), ('🕹️ 主界面', 'back_start'), ('其他 🪟', f'panel:back_config:{package_key}')]])
 
 
-def open_menu_ikb(openstats, timingstats) -> InlineKeyboardMarkup:
-    return ikb([[(f'{openstats} 自由注册', 'open_stat'), (f'{timingstats} 定时注册', 'open_timing')],
-                [('🤖注册账号天数', 'open_us'),('⭕ 注册限制', 'all_user_limit')], [('🌟 返回上一级', 'manage')]])
+def open_menu_ikb(openstats, timingstats, package_key: str) -> InlineKeyboardMarkup:
+    return ikb([[(f'{openstats} 自由注册', f'panel:open_stat:{package_key}'),
+                 (f'{timingstats} 定时注册', f'panel:open_timing:{package_key}')],
+                [('🤖注册账号天数', f'panel:open_us:{package_key}'), ('⭕ 注册限制', f'panel:all_user_limit:{package_key}')],
+                [('🌟 返回上一级', f'manage_pkg:{package_key}')]])
 
 
-back_free_ikb = ikb([[('🔙 返回上一级', 'open-menu')]])
-back_open_menu_ikb = ikb([[('🪪 重新定时', 'open_timing'), ('🔙 注册状态', 'open-menu')]])
-re_cr_link_ikb = ikb([[('♻️ 继续创建', 'cr_link'), ('🎗️ 返回主页', 'manage')]])
+def back_free_ikb(package_key: str) -> InlineKeyboardMarkup:
+    return ikb([[('🔙 返回上一级', f'panel:open-menu:{package_key}')]])
+
+
+def back_open_menu_ikb(package_key: str) -> InlineKeyboardMarkup:
+    return ikb([[('🪪 重新定时', f'panel:open_timing:{package_key}'),
+                 ('🔙 注册状态', f'panel:open-menu:{package_key}')]])
+
+
+def re_cr_link_ikb(package_key: str) -> InlineKeyboardMarkup:
+    return ikb([[('♻️ 继续创建', f'panel:cr_link:{package_key}'), ('🎗️ 返回主页', f'manage_pkg:{package_key}')]])
 close_it_ikb = ikb([[('❌ - Close', 'closeit')]])
 
 
-def ch_link_ikb(ls: list) -> InlineKeyboardMarkup:
+def ch_link_ikb(ls: list, package_key: str) -> InlineKeyboardMarkup:
     lines = array_chunk(ls, 2)
-    lines.append([["💫 回到首页", "manage"]])
+    lines.append([["💫 回到首页", f"manage_pkg:{package_key}"]])
     return ikb(lines)
 
 
@@ -250,7 +263,7 @@ async def whitelist_page_ikb(total_page: int, current_page: int, package_key: st
     keyboard.paginate(total_page, current_page, f'whitelist:{{number}}:{package_key}')
     next = InlineButton('⏭️ 后退+5', f'whitelist:{current_page + 5}:{package_key}')
     previous = InlineButton('⏮️ 前进-5', f'whitelist:{current_page - 5}:{package_key}')
-    followUp = [InlineButton('🔙 Back', 'manage')]
+    followUp = [InlineButton('🔙 Back', f'manage_pkg:{package_key}')]
     if total_page > 5:
         if current_page - 5 >= 1:
             followUp.append(previous)
@@ -263,7 +276,7 @@ async def normaluser_page_ikb(total_page: int, current_page: int, package_key: s
     keyboard.paginate(total_page, current_page, f'normaluser:{{number}}:{package_key}')
     next = InlineButton('⏭️ 后退+5', f'normaluser:{current_page + 5}:{package_key}')
     previous = InlineButton('⏮️ 前进-5', f'normaluser:{current_page - 5}:{package_key}')
-    followUp = [InlineButton('🔙 Back', 'manage')]
+    followUp = [InlineButton('🔙 Back', f'manage_pkg:{package_key}')]
     if total_page > 5:
         if current_page - 5 >= 1:
             followUp.append(previous)
@@ -283,7 +296,7 @@ def devices_page_ikb(has_prev: bool, has_next: bool, page: int, package_key: str
             nav_buttons.append(('➡️', f'devices:{page+1}:{package_key}'))
         buttons.append(nav_buttons)
     # 添加返回按钮
-    buttons.append([('🔙 返回', 'manage')])
+    buttons.append([('🔙 返回', f'manage_pkg:{package_key}')])
     keyboard = ikb(buttons)
     return keyboard
 async def favorites_page_ikb(total_page: int, current_page: int) -> InlineKeyboardMarkup:
@@ -299,7 +312,7 @@ async def favorites_page_ikb(total_page: int, current_page: int) -> InlineKeyboa
             followUp.append(next)
     keyboard.row(*followUp)
     return keyboard
-def cr_renew_ikb():
+def cr_renew_ikb(package_key: str):
     checkin = '✔️' if _open.checkin else '❌'
     exchange = '✔️' if _open.exchange else '❌'
     whitelist = '✔️' if _open.whitelist else '❌'
@@ -314,34 +327,34 @@ def cr_renew_ikb():
     invite_lv_text = lv_dic.get(_open.invite_lv, '未知')
     checkin_lv_text = lv_dic.get(_open.checkin_lv, '未知')
     keyboard = InlineKeyboard(row_width=2)
-    keyboard.add(InlineButton(f'{checkin} 每日签到', f'set_renew-checkin'),
-                 InlineButton(f'签到等级: {checkin_lv_text}', f'set_checkin_lv'),
-                 InlineButton(f'{exchange} 自动{sakura_b}续期', f'set_renew-exchange'),
-                 InlineButton(f'{whitelist} 兑换白名单', f'set_renew-whitelist'),
-                 InlineButton(f'{invite} 兑换邀请码', f'set_renew-invite'),
-                 InlineButton(f'邀请等级: {invite_lv_text}', f'set_invite_lv')
+    keyboard.add(InlineButton(f'{checkin} 每日签到', f'panel:set_renew:checkin:{package_key}'),
+                 InlineButton(f'签到等级: {checkin_lv_text}', f'panel:set_checkin_lv:{package_key}'),
+                 InlineButton(f'{exchange} 自动{sakura_b}续期', f'panel:set_renew:exchange:{package_key}'),
+                 InlineButton(f'{whitelist} 兑换白名单', f'panel:set_renew:whitelist:{package_key}'),
+                 InlineButton(f'{invite} 兑换邀请码', f'panel:set_renew:invite:{package_key}'),
+                 InlineButton(f'邀请等级: {invite_lv_text}', f'panel:set_invite_lv:{package_key}')
                  )
-    keyboard.row(InlineButton(f'◀ 返回', 'manage'))
+    keyboard.row(InlineButton(f'◀ 返回', f'manage_pkg:{package_key}'))
     return keyboard
-def invite_lv_ikb():
+def invite_lv_ikb(package_key: str):
     keyboard = ikb([
-        [('🅰️ 白名单', 'set_invite_lv-a'), ('🅱️ 普通用户', 'set_invite_lv-b')],
-        [('©️ 已禁用用户', 'set_invite_lv-c'), ('🅳️  所有用户', 'set_invite_lv-d')],
-        [('🔙 返回', 'set_renew')]
+        [('🅰️ 白名单', f'panel:set_invite_lv:a:{package_key}'), ('🅱️ 普通用户', f'panel:set_invite_lv:b:{package_key}')],
+        [('©️ 已禁用用户', f'panel:set_invite_lv:c:{package_key}'), ('🅳️  所有用户', f'panel:set_invite_lv:d:{package_key}')],
+        [('🔙 返回', f'panel:set_renew:{package_key}')]
     ])
     return keyboard
 
-def checkin_lv_ikb():
+def checkin_lv_ikb(package_key: str):
     keyboard = ikb([
-        [('🅰️ 白名单', 'set_checkin_lv-a'), ('🅱️ 普通用户', 'set_checkin_lv-b')],
-        [('©️ 已禁用用户', 'set_checkin_lv-c'), ('🅳️  所有用户', 'set_checkin_lv-d')],
-        [('🔙 返回', 'set_renew')]
+        [('🅰️ 白名单', f'panel:set_checkin_lv:a:{package_key}'), ('🅱️ 普通用户', f'panel:set_checkin_lv:b:{package_key}')],
+        [('©️ 已禁用用户', f'panel:set_checkin_lv:c:{package_key}'), ('🅳️  所有用户', f'panel:set_checkin_lv:d:{package_key}')],
+        [('🔙 返回', f'panel:set_renew:{package_key}')]
     ])
     return keyboard
 """ config_panel ↓"""
 
 
-def config_preparation() -> InlineKeyboardMarkup:
+def config_preparation(package_key: Optional[str] = None) -> InlineKeyboardMarkup:
     mp_set = '✅' if moviepilot.status else '❎'
     auto_up = '✅' if auto_update.status else '❎'
     leave_ban = '✅' if _open.leave_ban else '❎'
@@ -350,23 +363,31 @@ def config_preparation() -> InlineKeyboardMarkup:
     red_envelope_status = '✅' if red_envelope.status else '❎'
     allow_private = '✅' if red_envelope.allow_private else '❎'
     checkin_lv_text = {'a': '白名单', 'b': '普通用户', 'd': '所有人'}.get(_open.checkin_lv, '所有人')
+    line_callback = f'set_line:{package_key}' if package_key else 'set_line'
+    whitelist_line_callback = f'set_whitelist_line:{package_key}' if package_key else 'set_whitelist_line'
+    checkin_callback = f'panel:set_checkin_lv:{package_key}' if package_key else 'set_checkin_lv'
+    back_callback = f'manage_pkg:{package_key}' if package_key else 'manage'
     keyboard = ikb(
         [[('📄 导出日志', 'log_out'), ('📌 设置探针', 'set_tz')],
          [('🎬 显/隐指定库', 'set_block'), (f'{fuxx_pt} 皮套人过滤功能', 'set_fuxx_pitao')],
-         [('💠 普通用户线路', 'set_line'),('🌟 白名单线路', 'set_whitelist_line')],
+         [('💠 普通用户线路', line_callback), ('🌟 白名单线路', whitelist_line_callback)],
          [(f'{leave_ban} 退群封禁', 'leave_ban'), (f'{uplays} 观影奖励结算', 'set_uplays')],
          [(f'{auto_up} 自动更新bot', 'set_update'), (f'{mp_set} Moviepilot点播', 'set_mp')],
          [(f'{red_envelope_status} 红包', 'set_red_envelope_status'), (f'{allow_private} 专属红包', 'set_red_envelope_allow_private')],
          [(f'设置赠送资格天数({config.kk_gift_days}天)', 'set_kk_gift_days'), (f'设置活跃检测天数({config.activity_check_days}天)', 'set_activity_check_days')],
          [(f'设置封存账号天数({config.freeze_days}天)', 'set_freeze_days')],
-         [(f'设置签到权限({checkin_lv_text})', 'set_checkin_lv')],
+         [(f'设置签到权限({checkin_lv_text})', checkin_callback)],
          [('🔐 权限管理', 'perm_panel'), ('👥 管理员列表', 'admin_list')],
          [('📦 套餐管理', 'package_panel'), ('🧩 配置编辑器', 'set_config_any')],
-         [('🔙 返回', 'manage')]])
+         [('🔙 返回', back_callback)]])
     return keyboard
 
 
 back_config_p_ikb = ikb([[("🎮  ️返回主控", "back_config")]])
+
+
+def back_config_p_ikb_with_package(package_key: str) -> InlineKeyboardMarkup:
+    return ikb([[("🎮  ️返回主控", f"panel:back_config:{package_key}")]])
 
 
 def perm_panel_ikb() -> InlineKeyboardMarkup:
@@ -376,8 +397,10 @@ def perm_panel_ikb() -> InlineKeyboardMarkup:
     ])
 
 
-def back_set_ikb(method) -> InlineKeyboardMarkup:
-    return ikb([[("♻️ 重新设置", f"{method}"), ("🔙 返回主页", "back_config")]])
+def back_set_ikb(method, package_key: Optional[str] = None) -> InlineKeyboardMarkup:
+    retry_callback = f"{method}:{package_key}" if package_key else f"{method}"
+    back_callback = f"panel:back_config:{package_key}" if package_key else "back_config"
+    return ikb([[("♻️ 重新设置", retry_callback), ("🔙 返回主页", back_callback)]])
 
 
 def try_set_buy(ls: list) -> InlineKeyboardMarkup:
@@ -469,7 +492,7 @@ def gog_rester_ikb(link=None) -> InlineKeyboardMarkup:
 """ sched_panel ↓"""
 
 
-def sched_buttons():
+def sched_buttons(package_key: str):
     dayrank = '✅' if schedall.dayrank else '❎'
     weekrank = '✅' if schedall.weekrank else '❎'
     dayplayrank = '✅' if schedall.dayplayrank else '❎'
@@ -478,15 +501,15 @@ def sched_buttons():
     low_activity = '✅' if schedall.low_activity else '❎'
     backup_db = '✅' if schedall.backup_db else '❎'
     keyboard = InlineKeyboard(row_width=2)
-    keyboard.add(InlineButton(f'{dayrank} 播放日榜', f'sched-dayrank'),
-                 InlineButton(f'{weekrank} 播放周榜', f'sched-weekrank'),
-                 InlineButton(f'{dayplayrank} 观影日榜', f'sched-dayplayrank'),
-                 InlineButton(f'{weekplayrank} 观影周榜', f'sched-weekplayrank'),
-                 InlineButton(f'{check_ex} 到期保号', f'sched-check_ex'),
-                 InlineButton(f'{low_activity} 活跃保号', f'sched-low_activity'),
-                 InlineButton(f'{backup_db} 自动备份数据库', f'sched-backup_db')
+    keyboard.add(InlineButton(f'{dayrank} 播放日榜', f'panel:sched:dayrank:{package_key}'),
+                 InlineButton(f'{weekrank} 播放周榜', f'panel:sched:weekrank:{package_key}'),
+                 InlineButton(f'{dayplayrank} 观影日榜', f'panel:sched:dayplayrank:{package_key}'),
+                 InlineButton(f'{weekplayrank} 观影周榜', f'panel:sched:weekplayrank:{package_key}'),
+                 InlineButton(f'{check_ex} 到期保号', f'panel:sched:check_ex:{package_key}'),
+                 InlineButton(f'{low_activity} 活跃保号', f'panel:sched:low_activity:{package_key}'),
+                 InlineButton(f'{backup_db} 自动备份数据库', f'panel:sched:backup_db:{package_key}')
                  )
-    keyboard.row(InlineButton(f'🫧 返回', 'manage'))
+    keyboard.row(InlineButton(f'🫧 返回', f'manage_pkg:{package_key}'))
     return keyboard
 
 

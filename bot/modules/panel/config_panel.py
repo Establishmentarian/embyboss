@@ -8,11 +8,12 @@ from bot import bot, prefixes, bot_photo, Now, LOGGER, config, save_config, _ope
 from pyrogram import filters
 
 from bot.func_helper.filters import admins_on_filter
-from bot.func_helper.fix_bottons import config_preparation, close_it_ikb, back_config_p_ikb, back_set_ikb, mp_config_ikb
+from bot.func_helper.fix_bottons import config_preparation, close_it_ikb, back_config_p_ikb, back_set_ikb, mp_config_ikb, back_config_p_ikb_with_package
 from bot.func_helper.msg_utils import deleteMessage, editMessage, callAnswer, callListen, sendPhoto, sendFile
 from bot.func_helper.scheduler import scheduler
 from bot.scheduler.sync_mp_download import sync_download_tasks
 from bot.func_helper.permissions import has_permission, get_user_role
+from bot.func_helper.package_utils import select_package, resolve_package_key
 from bot.func_helper.utils import get_users
 from bot.schemas import EmbyPackage
 import json
@@ -121,16 +122,26 @@ async def config_p_set(_, msg):
     if not has_permission(msg.from_user.id, "config_basic"):
         return await sendPhoto(msg, photo=bot_photo, caption="❌ 权限不足，无法进入配置面板。")
     await deleteMessage(msg)
+    package_key, buttons = select_package(prefix="panel:back_config", back_callback="back_start")
+    if package_key is None:
+        return await sendPhoto(msg, photo=bot_photo, caption="📦 请选择要配置的套餐：", buttons=buttons)
     await sendPhoto(msg, photo=bot_photo, caption="🌸 欢迎回来！\n\n👇点击你要修改的内容。",
-                    buttons=config_preparation())
+                    buttons=config_preparation(package_key))
 
 
-@bot.on_callback_query(filters.regex('back_config') & admins_on_filter)
+@bot.on_callback_query(filters.regex('^back_config$|^panel:back_config:') & admins_on_filter)
 async def config_p_re(_, call):
     if not await _ensure_perm(call, "config_basic"):
         return
     await callAnswer(call, "✅ config")
-    await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容。", buttons=config_preparation())
+    if call.data.startswith("panel:back_config:"):
+        package_key = resolve_package_key(call.data.split(":")[-1])
+    else:
+        package_key, buttons = select_package(prefix="panel:back_config", back_callback="manage")
+        if package_key is None:
+            await callAnswer(call, "📦 请选择套餐", True)
+            return await editMessage(call, "📦 请选择要配置的套餐：", buttons=buttons)
+    await editMessage(call, "🌸 欢迎回来！\n\n👇点击你要修改的内容。", buttons=config_preparation(package_key))
 
 
 @bot.on_callback_query(filters.regex("log_out") & admins_on_filter)
@@ -185,54 +196,56 @@ async def set_tz(_, call):
 
 
 # 设置 emby 线路
-@bot.on_callback_query(filters.regex('set_line') & admins_on_filter)
+@bot.on_callback_query(filters.regex('^set_line') & admins_on_filter)
 async def set_emby_line(_, call):
     if not await _ensure_perm(call, "config_advanced"):
         return
     await callAnswer(call, '📌 设置emby线路')
+    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else None
     send = await editMessage(call,
                              "💘【设置线路】\n\n对我发送向emby用户展示的emby地址吧\n取消点击 /cancel")
     if send is False:
         return
 
-    txt = await callListen(call, 120, buttons=back_set_ikb('set_line'))
+    txt = await callListen(call, 120, buttons=back_set_ikb('set_line', package_key))
     if txt is False:
         return
 
     elif txt.text == '/cancel':
         await txt.delete()
-        await editMessage(call, '__您已经取消输入__ **会话已结束！**', buttons=back_set_ikb('set_line'))
+        await editMessage(call, '__您已经取消输入__ **会话已结束！**', buttons=back_set_ikb('set_line', package_key))
     else:
         await txt.delete()
         config.emby_line = txt.text
         save_config()
         await editMessage(call, f"**【网址样式】:** \n\n{config.emby_line}\n\n设置完成！done！",
-                          buttons=back_config_p_ikb)
+                          buttons=back_config_p_ikb_with_package(package_key) if package_key else back_config_p_ikb)
         LOGGER.info(f"【admin】：{call.from_user.id} - 更新emby线路为{config.emby_line}设置完成")
 
-@bot.on_callback_query(filters.regex('set_whitelist_line') & admins_on_filter)
+@bot.on_callback_query(filters.regex('^set_whitelist_line') & admins_on_filter)
 async def set_whitelist_emby_line(_, call):
     if not await _ensure_perm(call, "config_advanced"):
         return
     await callAnswer(call, '🌟 设置白名单线路')
+    package_key = resolve_package_key(call.data.split(":")[-1]) if ":" in call.data else None
     send = await editMessage(call,
                              "🌟【设置白名单线路】\n\n对我发送白名单用户专属的emby地址\n取消点击 /cancel")
     if send is False:
         return
 
-    txt = await callListen(call, 120, buttons=back_set_ikb('set_whitelist_line'))
+    txt = await callListen(call, 120, buttons=back_set_ikb('set_whitelist_line', package_key))
     if txt is False:
         return
 
     elif txt.text == '/cancel':
         await txt.delete()
-        await editMessage(call, '__您已经取消输入__ **会话已结束！**', buttons=back_set_ikb('set_whitelist_line'))
+        await editMessage(call, '__您已经取消输入__ **会话已结束！**', buttons=back_set_ikb('set_whitelist_line', package_key))
     else:
         await txt.delete()
         config.emby_whitelist_line = txt.text
         save_config()
         await editMessage(call, f"**【白名单线路】:** \n\n{config.emby_whitelist_line}\n\n设置完成！done！",
-                          buttons=back_config_p_ikb)
+                          buttons=back_config_p_ikb_with_package(package_key) if package_key else back_config_p_ikb)
         LOGGER.info(f"【admin】：{call.from_user.id} - 更新白名单线路为{config.emby_whitelist_line}设置完成")
 
 # 设置需要显示/隐藏的库
