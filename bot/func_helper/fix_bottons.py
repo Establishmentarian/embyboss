@@ -364,20 +364,42 @@ def config_preparation(package_key: Optional[str] = None) -> InlineKeyboardMarku
     auto_up = '✅' if auto_update.status else '❎'
     leave_ban = '✅' if get_package_open_value(package_key, "leave_ban") else '❎'
     uplays = '✅' if get_package_open_value(package_key, "uplays") else '❎'
+    checkin = '✅' if get_package_open_value(package_key, "checkin") else '❎'
+    exchange = '✅' if get_package_open_value(package_key, "exchange") else '❎'
+    whitelist = '✅' if get_package_open_value(package_key, "whitelist") else '❎'
+    invite = '✅' if get_package_open_value(package_key, "invite") else '❎'
     fuxx_pt = '✅' if fuxx_pitao else '❎'
     red_envelope_status = '✅' if red_envelope.status else '❎'
     allow_private = '✅' if red_envelope.allow_private else '❎'
     checkin_lv = get_package_open_value(package_key, "checkin_lv")
     checkin_lv_text = {'a': '白名单', 'b': '普通用户', 'd': '所有人'}.get(checkin_lv, '所有人')
+    invite_lv = get_package_open_value(package_key, "invite_lv")
+    invite_lv_text = {'a': '白名单', 'b': '普通用户', 'd': '所有人'}.get(invite_lv, '所有人')
+    checkin_reward = get_package_open_value(package_key, "checkin_reward") or [1, 10]
+    checkin_reward_text = f"{checkin_reward[0]}~{checkin_reward[1]}{config.money}"
+    exchange_cost = get_package_open_value(package_key, "exchange_cost") or 0
+    whitelist_cost = get_package_open_value(package_key, "whitelist_cost") or 0
+    invite_cost = get_package_open_value(package_key, "invite_cost") or 0
     line_callback = f'set_line:{package_key}' if package_key else 'set_line'
     whitelist_line_callback = f'set_whitelist_line:{package_key}' if package_key else 'set_whitelist_line'
     checkin_callback = f'panel:set_checkin_lv:{package_key}' if package_key else 'set_checkin_lv'
+    invite_callback = f'panel:set_invite_lv:{package_key}' if package_key else 'set_invite_lv'
     back_callback = f'manage_pkg:{package_key}' if package_key else 'manage'
     keyboard = ikb(
         [[('📄 导出日志', 'log_out'), ('📌 设置探针', 'set_tz')],
+         [(f'💰 积分名称({config.money})', 'set_money_name'),
+          (f'🎯 签到奖励({checkin_reward_text})', f'panel:set_checkin_reward:{package_key}')],
          [('🎬 显/隐指定库', 'set_block'), (f'{fuxx_pt} 皮套人过滤功能', 'set_fuxx_pitao')],
          [('💠 普通用户线路', line_callback), ('🌟 白名单线路', whitelist_line_callback)],
          [(f'{leave_ban} 退群封禁', f'leave_ban:{package_key}'), (f'{uplays} 观影奖励结算', f'set_uplays:{package_key}')],
+         [(f'{checkin} 签到功能', f'panel:toggle_open:checkin:{package_key}'),
+          (f'{exchange} 自动续期兑换', f'panel:toggle_open:exchange:{package_key}')],
+         [(f'{whitelist} 兑换白名单', f'panel:toggle_open:whitelist:{package_key}'),
+          (f'{invite} 兑换邀请码', f'panel:toggle_open:invite:{package_key}')],
+         [(f'续期花费({exchange_cost}{config.money})', f'panel:set_open_value:exchange_cost:{package_key}'),
+          (f'白名单花费({whitelist_cost}{config.money})', f'panel:set_open_value:whitelist_cost:{package_key}')],
+         [(f'邀请码花费({invite_cost}{config.money})', f'panel:set_open_value:invite_cost:{package_key}'),
+          (f'邀请等级({invite_lv_text})', invite_callback)],
          [(f'{auto_up} 自动更新bot', 'set_update'), (f'{mp_set} Moviepilot点播', 'set_mp')],
          [(f'{red_envelope_status} 红包', 'set_red_envelope_status'), (f'{allow_private} 专属红包', 'set_red_envelope_allow_private')],
          [(f'设置赠送资格天数({config.kk_gift_days}天)', 'set_kk_gift_days'), (f'设置活跃检测天数({config.activity_check_days}天)', 'set_activity_check_days')],
